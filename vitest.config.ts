@@ -3,7 +3,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
   test: {
-    exclude: ['node_modules/**', 'e2e/**'],
+    // `e2e/**` and `e2e-responsive/**` hold Playwright specs (they import
+    // @playwright/test, not vitest) and are run by Playwright, not vitest.
+    exclude: ['node_modules/**', 'e2e/**', 'e2e-responsive/**'],
   },
   resolve: {
     alias: {
