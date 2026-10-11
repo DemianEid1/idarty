@@ -390,18 +390,18 @@ export function WebsiteEditor({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           <button
             type="button"
             onClick={handleLiveWebsite}
-            className="rounded-xl border border-border bg-paper px-4 py-2 text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal"
+            className="rounded-xl border border-border bg-paper px-4 py-2 text-center text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal"
           >
             {rtl ? 'الموقع المباشر' : 'Live website'}
           </button>
           <button
             type="button"
             onClick={handlePreview}
-            className="rounded-xl border border-border bg-paper px-4 py-2 text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal"
+            className="rounded-xl border border-border bg-paper px-4 py-2 text-center text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal"
           >
             {rtl ? 'معاينة المسودة' : 'Preview draft'}
           </button>
@@ -409,7 +409,7 @@ export function WebsiteEditor({
             type="button"
             onClick={handleSaveDraft}
             disabled={pending || !hasUnsavedChanges}
-            className="rounded-xl bg-brand-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d6560] disabled:opacity-50"
+            className="rounded-xl bg-brand-teal px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-[#0d6560] disabled:opacity-50"
           >
             {saveStatus === 'saving' ? (rtl ? 'جارٍ الحفظ...' : 'Saving...') : (rtl ? 'حفظ المسودة' : 'Save draft')}
           </button>
@@ -418,7 +418,7 @@ export function WebsiteEditor({
               type="button"
               onClick={() => setShowDiscardConfirm(true)}
               disabled={pending || !hasUnpublishedChanges}
-              className="rounded-xl border border-border bg-paper px-4 py-2 text-sm font-semibold text-ink-muted transition hover:border-red-400 hover:text-red-600 disabled:opacity-50"
+              className="rounded-xl border border-border bg-paper px-4 py-2 text-center text-sm font-semibold text-ink-muted transition hover:border-red-400 hover:text-red-600 disabled:opacity-50"
               title={rtl ? 'إعادة المسودة إلى آخر إصدار منشور' : 'Reset draft to the last published version'}
             >
               {rtl ? 'تجاهل' : 'Discard'}
@@ -429,7 +429,7 @@ export function WebsiteEditor({
               type="button"
               onClick={() => setShowPublishConfirm(true)}
               disabled={pending || (!hasUnsavedChanges && !hasUnpublishedChanges)}
-              className="rounded-xl bg-[#0F766E] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0d6560] disabled:opacity-50"
+              className="rounded-xl bg-[#0F766E] px-4 py-2 text-center text-sm font-semibold text-white transition hover:bg-[#0d6560] disabled:opacity-50"
               title={rtl ? 'نشر التغييرات الحالية' : 'Publish current changes'}
             >
               {publishStatus === 'publishing' ? (rtl ? 'جارٍ النشر...' : 'Publishing...') : (rtl ? 'نشر' : 'Publish')}
@@ -457,7 +457,7 @@ export function WebsiteEditor({
       )}
 
       {/* Website Identity */}
-      <div className="rounded-3xl border border-border bg-paper p-6 shadow-float">
+      <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
         <h2 className="text-lg font-semibold">{rtl ? 'هوية الموقع' : 'Website Identity'}</h2>
         <p className="mt-1 text-sm text-ink-muted">
           {rtl ? 'تخصيص الألوان والشعار والمحتوى الرئيسي للموقع.' : 'Customize colors, logo, and main website content.'}
@@ -600,7 +600,7 @@ export function WebsiteEditor({
 
       {/* Section Content — driven by SECTION_CONTENT_FIELDS so the editor and
           renderer always agree on which fields are editable. */}
-      <div className="rounded-3xl border border-border bg-paper p-6 shadow-float">
+      <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
         <h2 className="text-lg font-semibold">{rtl ? 'محتوى الأقسام' : 'Section Content'}</h2>
         <p className="mt-1 text-sm text-ink-muted">
           {rtl
@@ -734,7 +734,7 @@ export function WebsiteEditor({
       </div>
 
       {/* Section Management */}
-      <div className="rounded-3xl border border-border bg-paper p-6 shadow-float">
+      <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
         <h2 className="text-lg font-semibold">{rtl ? 'إدارة الأقسام' : 'Section Management'}</h2>
         <p className="mt-1 text-sm text-ink-muted">
           {rtl ? 'التحكم في ظهور الأقسام وترتيبها في الموقع.' : 'Control which sections appear and their order on the website.'}
@@ -749,12 +749,12 @@ export function WebsiteEditor({
               return (
                 <div
                   key={section.id}
-                  className={`flex items-center justify-between rounded-2xl border p-4 transition ${
+                  className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 transition ${
                     section.isVisible ? 'border-[#edf0f4] bg-surface' : 'border-[#e1e5ed] bg-gray-50 opacity-60'
                   }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <div className="flex shrink-0 flex-col gap-1">
                       <button
                         type="button"
                         onClick={() => moveSection(section.id, 'up')}
@@ -778,12 +778,12 @@ export function WebsiteEditor({
                         </svg>
                       </button>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold">{label[locale]}</p>
-                      <p className="text-xs text-ink-muted">{label.description[locale]}</p>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold wrap-anywhere">{label[locale]}</p>
+                      <p className="text-xs text-ink-muted wrap-anywhere">{label.description[locale]}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex shrink-0 items-center gap-3">
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
                       section.isVisible ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
                     }`}>

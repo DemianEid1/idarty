@@ -178,42 +178,42 @@ export function TenantWebsite({
   // Section renderers
   // -------------------------------------------------------------------------
   const renderHero = () => (
-    <section key="hero" className="mx-auto max-w-6xl px-6 py-16 sm:py-20 lg:py-24">
+    <section key="hero" className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20 lg:py-24">
       <div className="max-w-2xl">
         <p
-          className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold"
+          className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold break-words"
           style={{ color: 'var(--site-primary)', borderColor: 'var(--site-primary)' }}
         >
-          <Sparkles className="h-4 w-4" />
+          <Sparkles className="h-4 w-4 shrink-0" />
           {businessTagline}
         </p>
-        <h1 className="mt-4 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">{businessName}</h1>
-        <p className="mt-5 max-w-xl text-base leading-7 text-[#6f7b90] sm:text-lg sm:leading-8">{businessDescription}</p>
+        <h1 className="mt-4 text-4xl font-bold tracking-tight break-words sm:text-5xl lg:text-6xl">{businessName}</h1>
+        <p className="mt-5 max-w-xl text-base leading-7 text-[#6f7b90] break-words sm:text-lg sm:leading-8">{businessDescription}</p>
         <div className="mt-7 flex flex-wrap gap-4 text-sm text-[#748096]">
           {businessAddress && (
-            <span className="flex items-center gap-2">
-              <MapPin className="h-4 w-4" style={{ color: 'var(--site-primary)' }} />
+            <span className="flex items-center gap-2 break-words">
+              <MapPin className="h-4 w-4 shrink-0" style={{ color: 'var(--site-primary)' }} />
               {businessAddress}
             </span>
           )}
           <span className="flex items-center gap-2">
-            <Clock3 className="h-4 w-4" style={{ color: 'var(--site-primary)' }} />
+            <Clock3 className="h-4 w-4 shrink-0" style={{ color: 'var(--site-primary)' }} />
             {hoursLabel}
           </span>
           {businessPhone && (
-            <span className="flex items-center gap-2">
-              <Phone className="h-4 w-4" style={{ color: 'var(--site-primary)' }} />
+            <span className="flex items-center gap-2 break-words">
+              <Phone className="h-4 w-4 shrink-0" style={{ color: 'var(--site-primary)' }} />
               {businessPhone}
             </span>
           )}
         </div>
         <Link
           href={`/${locale}/tenants/${slug}/book`}
-          className="mt-8 inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
+          className="mt-8 inline-flex max-w-full items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
           style={{ backgroundColor: 'var(--site-primary)' }}
         >
-          {ctaLabel}
-          <ArrowRight className="h-4 w-4" />
+          <span className="break-words">{ctaLabel}</span>
+          <ArrowRight className="h-4 w-4 shrink-0" />
         </Link>
       </div>
     </section>
@@ -225,14 +225,14 @@ export function TenantWebsite({
       id="services"
       className="border-t border-[#eef0f4]"
     >
-      <div className="mx-auto max-w-6xl px-6 py-16 sm:py-20">
+      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
         {serviceRows.length > 0 ? (
           <>
             <div className="mb-10 text-center">
-              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              <h2 className="text-2xl font-bold tracking-tight break-words sm:text-3xl">
                 {servicesHeading}
               </h2>
-              <p className="mt-2 text-sm text-[#6f7b90]">
+              <p className="mt-2 text-sm text-[#6f7b90] break-words">
                 {servicesDescription}
               </p>
             </div>
@@ -240,25 +240,25 @@ export function TenantWebsite({
               {serviceRows.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex flex-col rounded-2xl border border-[#e6eaf1] bg-paper p-6 shadow-sm transition hover:shadow-md"
+                  className="group flex min-w-0 flex-col rounded-2xl border border-[#e6eaf1] bg-paper p-6 shadow-sm transition hover:shadow-md"
                 >
-                  <div className="flex-1">
-                    <h3 className="text-base font-semibold">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
-                    {item.description && <p className="mt-2 text-sm leading-6 text-[#6f7b90]">{item.description}</p>}
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base font-semibold break-words">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
+                    {item.description && <p className="mt-2 text-sm leading-6 text-[#6f7b90] break-words">{item.description}</p>}
                   </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-[#eef0f4] pt-4">
-                    <div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eef0f4] pt-4">
+                    <div className="min-w-0">
                       <span className="text-lg font-bold" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
                       <span className="text-sm text-[#929bad]"> {tenant.currency}</span>
                       <p className="mt-0.5 text-xs text-[#929bad]">{durationLabel(item.durationMin)}</p>
                     </div>
                     <Link
                       href={`/${locale}/tenants/${slug}/book?service=${item.id}`}
-                      className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
                       style={{ backgroundColor: 'var(--site-primary)' }}
                     >
                       {rtl ? 'احجز' : 'Book'}
-                      <ArrowRight className="h-3.5 w-3.5" />
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0" />
                     </Link>
                   </div>
                 </div>
@@ -284,7 +284,7 @@ export function TenantWebsite({
 
   return (
     <main
-      className="min-h-screen text-[#172033]"
+      className="tenant-site min-h-screen text-[#172033]"
       dir={rtl ? 'rtl' : 'ltr'}
       style={{ ...siteThemeVars, backgroundColor: backgroundColor }}
     >
@@ -293,21 +293,42 @@ export function TenantWebsite({
       <div className="sticky top-0 z-40">
         {previewBanner}
         <header className="border-b border-[#e8ebf1] bg-paper/95 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-            <Link href={`/${locale}`} className="flex items-center gap-2 text-sm font-semibold">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+            <Link
+              href={`/${locale}`}
+              className="flex min-w-0 items-center gap-2 text-sm font-semibold"
+            >
               {logo ? (
-                <img src={logo} alt={businessName} className="h-8 w-auto object-contain" />
+                <img src={logo} alt="" className="h-8 w-auto max-w-full shrink-0 object-contain" />
               ) : (
                 <span
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
                   style={{ backgroundColor: 'var(--site-primary)' }}
+                  aria-hidden="true"
                 >
                   {businessName.charAt(0).toUpperCase()}
                 </span>
               )}
-              {businessName}
+              {/* The business name is ALWAYS rendered. It is a shrinkable flex
+                  child (`min-w-0`) so a long name can never push the nav or the
+                  booking CTA out of the viewport; `min-w-18` (4.5rem) keeps the
+                  brand readable instead of letting flex sacrifice it first.
+                  On narrow screens it wraps to at most two lines and only then
+                  ellipsizes; from `sm` up it stays on one line. `title` exposes
+                  the full name when the text is clipped. Deliberately NOT
+                  `hidden`: hiding the brand name on mobile removed the tenant's
+                  identity from the public site.
+                  `data-testid` gives the layout tests a stable, unambiguous hook
+                  — the element's position among its siblings is not a contract. */}
+              <span
+                data-testid="tenant-brand-name"
+                className="min-w-18 line-clamp-2 leading-tight sm:line-clamp-1"
+                title={businessName}
+              >
+                {businessName}
+              </span>
             </Link>
-            <nav className="flex items-center gap-3 sm:gap-4">
+            <nav className="flex min-w-0 items-center gap-2 sm:gap-3">
               {showServices && serviceRows.length > 0 && (
                 <a
                   href="#services"
@@ -319,10 +340,11 @@ export function TenantWebsite({
               {localeSwitch}
               <Link
                 href={`/${locale}/tenants/${slug}/book`}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+                className="flex min-w-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90"
                 style={{ backgroundColor: 'var(--site-primary)' }}
               >
-                {ctaLabel}
+                <span className="truncate">{ctaLabel}</span>
+                <ArrowRight className="h-4 w-4 shrink-0" />
               </Link>
             </nav>
           </div>
@@ -334,7 +356,7 @@ export function TenantWebsite({
 
       {/* Footer */}
       <footer className="border-t border-border bg-paper py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-center gap-2 px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-center gap-2 px-4 py-1 sm:px-6">
           <span className="text-xs text-[#a0a8b6]">{rtl ? 'مدعوم بواسطة' : 'Powered by'}</span>
           <Link href="/" className="flex items-center gap-1 text-xs font-semibold text-brand-teal" aria-label="Idarty">
             <LogoIcon height={14} />

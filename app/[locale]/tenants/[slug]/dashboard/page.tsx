@@ -21,6 +21,7 @@ import { StaffServicesForm } from '@/components/staff-services-form'
 import { DateOverrideForm, DateOverrideDeleteButton } from '@/components/date-override-form'
 import { SignOutButton } from '@/components/sign-out-button'
 import { LocaleSwitcher } from '@/components/locale-switcher'
+import { DashboardMobileNav } from '@/components/dashboard-mobile-nav'
 import { dateOverrides, staff, staffServices, staffTranslations, tenantTranslations, workingHours } from '@/lib/db/schema'
 import { BrandingForm } from '@/components/branding-form'
 import { WorkspaceSettingsForm } from '@/components/workspace-settings-form'
@@ -115,14 +116,20 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
 
   const nav = [
     { id: 'overview', icon: <CalendarDays aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'نظرة عامة' : 'Overview' },
-    { id: 'website', icon: <Sparkles aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الموقع' : 'Website' },
     { id: 'customers', icon: <Users aria-hidden="true" className="h-4 w-4" />, label: t.customers },
     { id: 'services', icon: <ClipboardList aria-hidden="true" className="h-4 w-4" />, label: t.services },
     { id: 'team', icon: <Users aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule' },
+    { id: 'website', icon: <Sparkles aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الموقع' : 'Website' },
     { id: 'settings', icon: <Settings2 aria-hidden="true" className="h-4 w-4" />, label: t.settings },
   ]
 
   const isAdmin = (access.session.user as any).isPlatformAdmin === true
+
+  // The workspace's real display name: its localized translation, falling back
+  // to the slug when a translation row is missing. Used for the page heading so
+  // the dashboard is not headed by the generic "Workspace" label.
+  const tenantDisplayName = tenantTranslation?.name?.trim() || access.tenant.slug
+  const adminLabel = locale === 'ar' ? 'لوحة الإدارة' : 'Admin Panel'
 
   return <main dir={rtl ? 'rtl' : 'ltr'} className="min-h-screen bg-[#f7f8fb] text-[#172033]">
     <div className="mx-auto flex min-h-screen max-w-7xl">
@@ -130,7 +137,7 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
         <a href="/" className="flex items-center" aria-label={locale === 'ar' ? 'إدارتي' : 'Idarty'}>
           <Logo locale={locale} height={26} />
         </a>
-        <div className="mt-10 rounded-2xl bg-surface p-4"><p className="text-xs text-ink-muted">{t.title}</p><p className="mt-1 truncate text-sm font-semibold">{access.tenant.slug}</p></div>
+        <div className="mt-10 rounded-2xl bg-surface p-4"><p className="text-xs text-ink-muted">{t.title}</p><p className="mt-1 truncate text-sm font-semibold">{tenantDisplayName}</p></div>
         <nav className="mt-8 space-y-1 text-sm">
           {nav.map(n => (
             <a key={n.id} className={`flex items-center gap-3 rounded-xl px-3 py-3 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 ${tab === n.id ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'}`} href={`?tab=${n.id}`}>
@@ -142,19 +149,35 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
           <div className="mt-6 border-t border-border pt-6">
             <a href={`/${locale}/admin`} className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-3 text-sm font-semibold text-amber-700 outline-none transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500">
               <Settings2 aria-hidden="true" className="h-4 w-4" />
-              {locale === 'ar' ? 'لوحة الإدارة' : 'Admin Panel'}
+              {adminLabel}
             </a>
           </div>
         )}
       </aside>
-      <section className="min-w-0 flex-1 p-6 sm:p-10">
-        <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-medium text-ink-muted">{access.session.user.name}</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{t.title}</h1><p className="mt-2 text-sm text-ink-muted">{t.subtitle}</p></div><div className="flex items-center gap-3">{isAdmin && <a href={`/${locale}/admin`} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 outline-none transition hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500">{locale === 'ar' ? 'الإدارة' : 'Admin'}</a>}<span className="rounded-full bg-[#eaf8f1] px-3 py-1.5 text-xs font-semibold text-[#24865b]">{access.membership.role}</span><LocaleSwitcher currentLocale={locale} /><SignOutButton label={rtl ? 'تسجيل الخروج' : 'Sign out'} /></div></header>
+      <section className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:p-10">
+        <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <DashboardMobileNav
+              locale={locale}
+              items={nav}
+              activeTab={tab}
+              adminHref={isAdmin ? `/${locale}/admin` : undefined}
+              adminLabel={adminLabel}
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-ink-muted">{access.session.user.name}</p>
+              <h1 className="mt-2 break-words text-2xl font-semibold tracking-tight sm:text-3xl">{tenantDisplayName}</h1>
+              <p className="mt-2 text-sm text-ink-muted">{t.subtitle}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">{isAdmin && <a href={`/${locale}/admin`} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 outline-none transition hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500">{locale === 'ar' ? 'الإدارة' : 'Admin'}</a>}<span className="rounded-full bg-[#eaf8f1] px-3 py-1.5 text-xs font-semibold text-[#24865b]">{access.membership.role}</span><LocaleSwitcher currentLocale={locale} /><SignOutButton label={rtl ? 'تسجيل الخروج' : 'Sign out'} /></div>
+        </header>
 
         {tab === 'overview' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="mt-9 grid gap-4 sm:grid-cols-3"><Stat icon={<CalendarDays className="h-5 w-5" />} label={t.appointments} value={String(appointmentCount[0]?.value ?? 0)} /><Stat icon={<Users className="h-5 w-5" />} label={t.customers} value={String(customerCount[0]?.value ?? 0)} /><Stat icon={<ClipboardList className="h-5 w-5" />} label={t.services} value={String(serviceCount[0]?.value ?? 0)} /></div>
 
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-6 sm:p-8 shadow-float">
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-8">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-semibold tracking-tight">{rtl ? 'خطوات البدء' : 'Getting started'}</h2>
@@ -180,14 +203,14 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
                 ))}
               </div>
             </div>
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-6 shadow-float"><h2 className="text-lg font-semibold">{t.appointments}</h2><div className="mt-6 space-y-3">{todayBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-12 text-center text-sm text-ink-muted">{t.empty}</div> : todayBookings.map((booking) => <div key={booking.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-4"><div><p className="font-semibold">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-6 shadow-float"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'المواعيد القادمة' : 'Upcoming bookings'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'نظرة على الأيام السبعة القادمة.' : 'A view of the next seven days.'}</p></div><span className="rounded-full bg-[#fff5e8] px-3 py-1 text-xs font-semibold text-[#b86a12]">{upcomingBookings.length}</span></div><div className="mt-5 space-y-2">{upcomingBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا توجد مواعيد قادمة.' : 'No upcoming bookings.'}</div> : upcomingBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div><p className="font-semibold">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{t.appointments}</h2><div className="mt-6 space-y-3">{todayBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-12 text-center text-sm text-ink-muted">{t.empty}</div> : todayBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-4"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'المواعيد القادمة' : 'Upcoming bookings'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'نظرة على الأيام السبعة القادمة.' : 'A view of the next seven days.'}</p></div><span className="shrink-0 rounded-full bg-[#fff5e8] px-3 py-1 text-xs font-semibold text-[#b86a12]">{upcomingBookings.length}</span></div><div className="mt-5 space-y-2">{upcomingBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا توجد مواعيد قادمة.' : 'No upcoming bookings.'}</div> : upcomingBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
           </div>
         )}
 
         {tab === 'customers' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 rounded-3xl border border-border bg-paper p-6 shadow-float"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.customers}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'آخر العملاء الذين حجزوا معك.' : 'The latest customers who booked with you.'}</p></div><span className="rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{customerCount[0]?.value ?? 0}</span></div><div className="mt-5 divide-y divide-border">{customerRows.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا يوجد عملاء بعد.' : 'No customers yet.'}</div> : customerRows.map((customer) => <div key={customer.id} className="flex flex-wrap items-center justify-between gap-3 py-4 first:pt-0 last:pb-0"><div><p className="font-semibold">{customer.name}</p><p className="mt-1 text-xs text-ink-muted">{customer.phone}{customer.email ? ` · ${customer.email}` : ''}</p></div><p className="text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' }).format(customer.createdAt)}</p></div>)}</div>
+            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.customers}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'آخر العملاء الذين حجزوا معك.' : 'The latest customers who booked with you.'}</p></div><span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{customerCount[0]?.value ?? 0}</span></div><div className="mt-5 divide-y divide-border">{customerRows.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا يوجد عملاء بعد.' : 'No customers yet.'}</div> : customerRows.map((customer) => <div key={customer.id} className="flex flex-wrap items-center justify-between gap-3 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{customer.name}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{customer.phone}{customer.email ? ` · ${customer.email}` : ''}</p></div><p className="shrink-0 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' }).format(customer.createdAt)}</p></div>)}</div>
               {customerCount[0]?.value > pageSize && (
                 <div className="mt-5 flex items-center justify-center gap-3">
                   {page > 1 && <a href={`?tab=customers&page=${page - 1}`} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal">{rtl ? '→' : '←'} {rtl ? 'السابق' : 'Previous'}</a>}
@@ -201,7 +224,7 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
 
         {tab === 'website' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mb-6">
+            <div className="mt-9 mb-6">
               <h2 className="text-xl font-semibold tracking-tight">
                 {locale === 'ar' ? 'محرر الموقع' : 'Website Builder'}
               </h2>
@@ -238,27 +261,27 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
         )}
         {tab === 'services' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 rounded-3xl border border-border bg-paper p-6 shadow-float"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.services}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أدر الخدمات التي يمكن حجزها من موقعك.' : 'Manage services customers can book.'}</p></div><span className="rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{serviceRows.length}</span></div><div className="mt-5 space-y-2">{serviceRows.map((service) => <div key={service.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div><p className="font-semibold">{service.name ?? (locale === 'ar' ? 'خدمة بدون ترجمة' : 'Untitled service')}</p><p className="mt-1 text-xs text-ink-muted">{service.durationMin} {locale === 'ar' ? 'دقيقة' : 'min'} · {service.priceAmount} {access.tenant.currency}</p></div><div className="flex items-center gap-3"><ServiceEditForm slug={slug} locale={locale} service={{ id: service.id, name: service.name ?? '', durationMin: service.durationMin, priceAmount: String(service.priceAmount) }} /><ServiceArchiveButton slug={slug} locale={locale} serviceId={service.id} /></div></div>)}</div><ServiceForm locale={locale} slug={slug} /></div>
+            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.services}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أدر الخدمات التي يمكن حجزها من موقعك.' : 'Manage services customers can book.'}</p></div><span className="rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{serviceRows.length}</span></div><div className="mt-5 space-y-2">{serviceRows.map((service) => <div key={service.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{service.name ?? (locale === 'ar' ? 'خدمة بدون ترجمة' : 'Untitled service')}</p><p className="mt-1 text-xs text-ink-muted">{service.durationMin} {locale === 'ar' ? 'دقيقة' : 'min'} · {service.priceAmount} {access.tenant.currency}</p></div><div className="flex shrink-0 items-center gap-3"><ServiceEditForm slug={slug} locale={locale} service={{ id: service.id, name: service.name ?? '', durationMin: service.durationMin, priceAmount: String(service.priceAmount) }} /><ServiceArchiveButton slug={slug} locale={locale} serviceId={service.id} /></div></div>)}</div><ServiceForm locale={locale} slug={slug} /></div>
           </div>
         )}
 
         {tab === 'team' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 rounded-3xl border border-border bg-paper p-6 shadow-float"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'الفريق' : 'Team'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف أعضاء الفريق الذين يقدمون الخدمات.' : 'Add the people who provide your services.'}</p></div><span className="rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{staffRows.length}</span></div><div className="mt-5 space-y-2">{staffRows.map((person) => <div key={person.id} className="flex items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div><p className="font-semibold">{person.name ?? (locale === 'ar' ? 'عضو فريق' : 'Team member')}</p><p className="mt-1 text-xs text-ink-muted">{person.email ?? person.phone ?? ''}</p></div><div className="flex items-center gap-3"><StaffEditForm slug={slug} locale={locale} staff={{ id: person.id, name: person.name ?? '', email: person.email ?? '', phone: person.phone ?? '' }} /><StaffArchiveButton slug={slug} locale={locale} staffId={person.id} /></div><StaffServicesForm slug={slug} locale={locale} staffId={person.id} services={serviceRows.map((service) => ({ id: service.id, name: service.name ?? (rtl ? 'خدمة' : 'Service') }))} selected={assignmentRows.filter((assignment) => assignment.staffId === person.id).map((assignment) => assignment.serviceId)} /></div>)}</div><StaffForm locale={locale} slug={slug} /></div>
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-6 shadow-float"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'ساعات العمل' : 'Working hours'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'حدد الأوقات العامة المتاحة للحجز.' : 'Set the general hours available for bookings.'}</p><WorkingHoursForm locale={locale} slug={slug} hours={hoursRows} /></div>
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-6 shadow-float"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'استثناءات المواعيد' : 'Date overrides'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف العطلات أو ساعات العمل الخاصة.' : 'Add holidays or custom hours.'}</p><div className="mt-5 space-y-2">{overrideRows.map((override) => <div key={override.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3"><div><p className="font-semibold">{override.label ?? (override.kind === 'closed' ? (locale === 'ar' ? 'مغلق' : 'Closed') : (locale === 'ar' ? 'ساعات مخصصة' : 'Custom hours'))}</p><p className="mt-1 text-xs text-ink-muted">{override.startDate} → {override.endDate}{override.startTime ? ` · ${override.startTime}–${override.endTime}` : ''}</p></div><DateOverrideDeleteButton locale={locale} slug={slug} overrideId={override.id} /></div>)}</div><DateOverrideForm locale={locale} slug={slug} /></div>
+            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'الفريق' : 'Team'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف أعضاء الفريق الذين يقدمون الخدمات.' : 'Add the people who provide your services.'}</p></div><span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{staffRows.length}</span></div><div className="mt-5 space-y-3">{staffRows.map((person) => <div key={person.id} className="rounded-2xl bg-surface px-4 py-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{person.name ?? (locale === 'ar' ? 'عضو فريق' : 'Team member')}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{person.email ?? person.phone ?? ''}</p></div><div className="flex shrink-0 items-center gap-3"><StaffEditForm slug={slug} locale={locale} staff={{ id: person.id, name: person.name ?? '', email: person.email ?? '', phone: person.phone ?? '' }} /><StaffArchiveButton slug={slug} locale={locale} staffId={person.id} /></div></div><StaffServicesForm slug={slug} locale={locale} staffId={person.id} services={serviceRows.map((service) => ({ id: service.id, name: service.name ?? (rtl ? 'خدمة' : 'Service') }))} selected={assignmentRows.filter((assignment) => assignment.staffId === person.id).map((assignment) => assignment.serviceId)} /></div>)}</div><StaffForm locale={locale} slug={slug} /></div>
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'ساعات العمل' : 'Working hours'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'حدد الأوقات العامة المتاحة للحجز.' : 'Set the general hours available for bookings.'}</p><WorkingHoursForm locale={locale} slug={slug} hours={hoursRows} /></div>
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'استثناءات المواعيد' : 'Date overrides'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف العطلات أو ساعات العمل الخاصة.' : 'Add holidays or custom hours.'}</p><div className="mt-5 space-y-2">{overrideRows.map((override) => <div key={override.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{override.label ?? (override.kind === 'closed' ? (locale === 'ar' ? 'مغلق' : 'Closed') : (locale === 'ar' ? 'ساعات مخصصة' : 'Custom hours'))}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{override.startDate} → {override.endDate}{override.startTime ? ` · ${override.startTime}–${override.endTime}` : ''}</p></div><DateOverrideDeleteButton locale={locale} slug={slug} overrideId={override.id} /></div>)}</div><DateOverrideForm locale={locale} slug={slug} /></div>
           </div>
         )}
 
         {tab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6 mt-9">
-            <div className="rounded-3xl border border-border bg-paper p-6 shadow-float">
+            <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
               <h2 className="text-lg font-semibold">{locale === 'ar' ? 'المعلومات الأساسية' : 'Basic information'}</h2>
               <p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'قم بتحديث اسم مساحة عملك ونوع نشاطك.' : 'Update your workspace name and business type.'}</p>
               <WorkspaceSettingsForm locale={locale} slug={slug} currentName={tenantTranslation?.name ?? access.tenant.slug} currentType={isBusinessType(access.tenant.businessType) ? access.tenant.businessType : 'other'} />
             </div>
 
-            <div className="rounded-3xl border border-border bg-paper p-6 shadow-float">
+            <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
               <h2 className="text-lg font-semibold">{locale === 'ar' ? 'الهوية البصرية' : 'Branding'}</h2>
               <p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'اختر ألوان مساحة عملك وشعارك.' : 'Customize your workspace logo and color palette.'}</p>
               <BrandingForm locale={locale} slug={slug} currentPrimary={tenantTheme.primaryColor ?? '#0F766E'} currentAccent={tenantTheme.accentColor ?? '#f0faf9'} currentLogo={tenantTheme.logo ?? ''} />

@@ -172,3 +172,16 @@
 .group:hover {
   border-color: var(--hover-border, var(--border));
 }
+
+/* Public tenant website (Website Builder output).
+   Tenant-entered text is arbitrary — including long unbroken strings and long
+   Arabic words. Break only when a word would otherwise overflow, and let
+   containers shrink below their content so grids/flex rows cannot blow out the
+   viewport. Scoped to the public site so the app UI is unaffected. */
+.tenant-site {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.tenant-site :where(h1, h2, h3, p, a, span, li, dd, dt) {
+  overflow-wrap: anywhere;
+}
