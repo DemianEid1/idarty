@@ -13,10 +13,12 @@ import { resolve } from 'node:path'
 // e2e-responsive/dashboard-navigation.spec.ts.
 // ---------------------------------------------------------------------------
 
-const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8')
+const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8').replace(/\r\n/g, '\n')
 
 const dashboard = read('../app/[locale]/tenants/[slug]/dashboard/page.tsx')
 const mobileNav = read('../components/dashboard-mobile-nav.tsx')
+const publicWebsiteLink = read('../components/public-website-link.tsx')
+const routes = read('../lib/routes.ts')
 
 describe('sidebar navigation order', () => {
   const expectedOrder = ['overview', 'customers', 'services', 'team', 'website', 'settings']
@@ -58,6 +60,333 @@ describe('sidebar navigation order', () => {
     expect(dashboard).toContain('isPlatformAdmin')
     expect(dashboard).toContain('`/${locale}/admin`')
   })
+
+  it('uses the Store icon ONLY for the Website nav item', () => {
+    const start = dashboard.indexOf('const nav = [')
+    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
+    const block = dashboard.slice(start, end)
+    // Exactly one Store icon, on the website item.
+    const storeIcons = block.match(/<Store\b/g) ?? []
+    expect(storeIcons.length).toBe(1)
+    const websiteLine = block.slice(block.indexOf("id: 'website'"), block.indexOf("id: 'settings'"))
+    expect(websiteLine).toContain('<Store')
+    // No other nav item gained Store.
+    expect(block.slice(0, block.indexOf("id: 'website'"))).not.toContain('<Store')
+  })
+
+  it('keeps the same icon size and aria-hidden on every nav icon', () => {
+    const start = dashboard.indexOf('const nav = [')
+    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
+    const block = dashboard.slice(start, end)
+    const icons = block.match(/aria-hidden="true" className="h-4 w-4"/g) ?? []
+    expect(icons.length).toBe(6)
+  })
+})
+
+describe('sidebar spacing and active state', () => {
+  it('uses tight item spacing without collapsing the list', () => {
+    expect(dashboard).toContain('className="mt-7 space-y-0.5 text-sm"')
+  })
+
+  it('applies the teal active treatment only to the selected item', () => {
+    // Single conditional: active gets teal, inactive gets a hover only.
+    expect(dashboard).toContain("tab === n.id ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'")
+  })
+
+  it('does not reintroduce the Workspace identity card', () => {
+    expect(dashboard).not.toContain('mt-10 rounded-2xl bg-surface p-4')
+  })
+})
+
+describe('Business Insights is removed from the Overview UI', () => {
+  it('renders no insights section', () => {
+    expect(dashboard).not.toContain('insights')
+    expect(dashboard).not.toContain('رؤى سريعة')
+    expect(dashboard).not.toContain("'Insights'")
+  })
+
+  it('leaves no empty container or section-specific spacing behind', () => {
+    // The appointments card follows the onboarding block directly.
+    expect(dashboard).toContain(')}\n\n            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{t.appointments}</h2>')
+  })
+
+  it('drops the now-unused pending-count query', () => {
+    expect(dashboard).not.toContain("bookings.status, 'pending'")
+  })
+
+  it('keeps the statistics cards, quick actions and onboarding intact', () => {
+    expect(dashboard).toContain('lg:grid-cols-4')
+    expect(dashboard).toContain("?tab=services")
+    expect(dashboard).toContain('OnboardingSuccess')
+  })
+})
+
+describe('onboarding completion', () => {
+  const success = read('../components/onboarding-success.tsx')
+
+  it('swaps the checklist for a success message only when complete', () => {
+    expect(dashboard).toContain('onboardingComplete ? (')
+    expect(dashboard).toContain('<OnboardingSuccess')
+  })
+
+  it('keeps the checklist rendered while incomplete', () => {
+    expect(dashboard).toContain("{rtl ? 'خطوات البدء' : 'Getting started'}")
+    expect(dashboard).toContain('{checklist.map((item) => (')
+  })
+
+  it('shows the requested localized success copy', () => {
+    expect(success).toContain("'تم إعداد مساحة العمل بنجاح'")
+    expect(success).toContain("'Your workspace is all set!'")
+  })
+
+  it('is dismissible and persists without a DB migration', () => {
+    expect(success).toContain('window.localStorage.setItem(storageKey')
+    expect(success).toContain("aria-label={rtl ? 'إخفاء رسالة الإعداد' : 'Dismiss setup message'}")
+    expect(success).not.toContain('fetch(')
+  })
+
+  it('namespaces persistence per tenant', () => {
+    expect(dashboard).toContain('storageKey={`idarty:onboarding-success:${access.tenant.id}`}')
+  })
+})
+
+describe('unified public website link control', () => {
+  it('sources the URL from the project URL helper, not a hardcoded domain', () => {
+    expect(dashboard).toContain('publicTenantUrl(locale, slug)')
+    expect(dashboard).toContain("import { publicTenantUrl } from '@/lib/routes'")
+    expect(publicWebsiteLink).not.toContain('idarty.vercel.app')
+    expect(dashboard).not.toContain('idarty.vercel.app')
+  })
+
+  it('replaces the separate View website button and the old copy field', () => {
+    expect(dashboard).toContain('<PublicWebsiteLink url={publicUrl} locale={locale} siteName={tenantDisplayName} />')
+    // No leftover duplicate controls.
+    expect(dashboard).not.toContain('PublicLinkCopy')
+    expect(dashboard).not.toContain("'عرض الموقع'")
+    expect(dashboard).not.toContain("'View website'")
+  })
+
+  it('opens the public site in a new tab', () => {
+    expect(publicWebsiteLink).toContain('target="_blank"')
+    expect(publicWebsiteLink).toContain('rel="noreferrer"')
+    expect(publicWebsiteLink).toContain('href={url}')
+    expect(publicWebsiteLink).toContain('<ExternalLink')
+    expect(publicWebsiteLink).toContain("aria-label={rtl ? 'فتح الموقع في تبويب جديد' : 'Open website in a new tab'}")
+  })
+
+  it('copies the full absolute URL resolved against the browser origin', () => {
+    expect(publicWebsiteLink).toContain('navigator.clipboard.writeText(absolute)')
+    expect(publicWebsiteLink).toContain('window.location.origin')
+    expect(publicWebsiteLink).toContain('<Copy')
+  })
+
+  it('shows truncated display text but exposes the full URL', () => {
+    expect(publicWebsiteLink).toContain('truncate font-mono')
+    expect(publicWebsiteLink).toContain('title={url}')
+  })
+
+  it('provides localized success and failure feedback', () => {
+    expect(publicWebsiteLink).toContain("rtl ? 'تم نسخ الرابط' : 'Link copied'")
+    expect(publicWebsiteLink).toContain("rtl ? 'تعذر نسخ الرابط' : 'Could not copy'")
+    expect(publicWebsiteLink).toContain('role="status"')
+    expect(publicWebsiteLink).toContain('aria-live="polite"')
+  })
+
+  it('uses a Check icon for the copied state', () => {
+    expect(publicWebsiteLink).toContain('<Check')
+  })
+
+  it('handles clipboard failure gracefully', () => {
+    expect(publicWebsiteLink).toContain('} catch {')
+    expect(publicWebsiteLink).toContain('document.execCommand')
+    expect(publicWebsiteLink).toContain("setStatus(ok ? 'copied' : 'error')")
+  })
+
+  it('wraps on narrow screens without forcing overflow', () => {
+    expect(publicWebsiteLink).toContain('flex flex-wrap items-center')
+    expect(publicWebsiteLink).toContain('min-w-0')
+    expect(publicWebsiteLink).not.toContain('overflow-x')
+  })
+
+  it('spans the content width with the groups at opposite edges', () => {
+    // Full-width card; identity at the start edge and the actions at the end
+    // edge, with the free space between them.
+    expect(publicWebsiteLink).toContain('w-full rounded-3xl')
+    expect(publicWebsiteLink).toContain('flex flex-wrap items-center justify-between')
+    // Identity group can shrink so the url truncates instead of overflowing.
+    expect(publicWebsiteLink).toContain('flex min-w-0 items-center gap-3')
+    // Actions stay grouped together (never split apart).
+    expect(publicWebsiteLink).toContain('flex shrink-0 items-center gap-2')
+  })
+
+  it('is placed above the Quick Actions row', () => {
+    // Anchor on the actual row markup, not the phrase (which also appears in
+    // an earlier comment elsewhere in the page).
+    const cardIdx = dashboard.indexOf('<PublicWebsiteLink')
+    const qaRowIdx = dashboard.indexOf('mt-4 flex flex-wrap gap-2')
+    expect(cardIdx).toBeGreaterThan(-1)
+    expect(qaRowIdx).toBeGreaterThan(-1)
+    // The card is rendered before the quick-actions row in source order.
+    expect(cardIdx).toBeLessThan(qaRowIdx)
+    // And the row still holds exactly the three remaining actions.
+    const row = dashboard.slice(qaRowIdx, dashboard.indexOf('</div>', qaRowIdx))
+    expect(row).toContain('?tab=services')
+    expect(row).toContain('?tab=team')
+    expect(row).toContain('?tab=website')
+    expect(row).not.toContain('<PublicWebsiteLink')
+  })
+
+  it('keeps the other quick actions unchanged', () => {
+    expect(dashboard).toContain("?tab=services")
+    expect(dashboard).toContain("?tab=team")
+    expect(dashboard).toContain("?tab=website")
+  })
+})
+
+describe('public website link card', () => {
+  it('renders as a standalone card with the muted section label', () => {
+    expect(publicWebsiteLink).toContain("rtl ? 'رابط الموقع العام' : 'Public Website Link'")
+    expect(publicWebsiteLink).toContain('rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6')
+  })
+
+  it('groups the website identity with a globe icon on the start side', () => {
+    expect(publicWebsiteLink).toContain('<Globe')
+    expect(publicWebsiteLink).toContain("rtl ? `موقع ${siteName}` : `${siteName} Website`")
+    // URL sits under the title in muted text, kept LTR for readability.
+    expect(publicWebsiteLink).toContain('dir="ltr" title={url}')
+    expect(publicWebsiteLink).toContain('text-ink-muted')
+  })
+
+  it('places Copy then Open on the end side, teal primary for Open', () => {
+    const copyIdx = publicWebsiteLink.indexOf('aria-label={rtl ? \'نسخ رابط الموقع\'')
+    const openIdx = publicWebsiteLink.indexOf('aria-label={rtl ? \'فتح الموقع في تبويب جديد\'')
+    expect(copyIdx).toBeGreaterThan(-1)
+    expect(openIdx).toBeGreaterThan(copyIdx)
+    // Open keeps the teal primary treatment; Copy stays neutral with a border.
+    expect(publicWebsiteLink).toContain('bg-brand-teal text-white')
+    expect(publicWebsiteLink).toContain('border border-border bg-paper text-[#516078]')
+  })
+
+  it('keeps both action buttons the same compact square size', () => {
+    const nines = publicWebsiteLink.match(/h-9 w-9/g) ?? []
+    expect(nines.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('is NOT duplicated inside the Quick Actions row', () => {
+    const rowStart = dashboard.indexOf('Quick actions')
+    const rowEnd = dashboard.indexOf('</div>', dashboard.indexOf('?tab=website'))
+    const row = dashboard.slice(rowStart, rowEnd)
+    expect(row).not.toContain('<PublicWebsiteLink')
+    // ...but it is rendered once, right after the row.
+    expect((dashboard.match(/<PublicWebsiteLink/g) ?? []).length).toBe(1)
+  })
+
+  it('avoids fixed widths / min-heights that would create empty space', () => {
+    expect(publicWebsiteLink).not.toMatch(/min-h-\[/)
+    expect(publicWebsiteLink).not.toMatch(/w-\[\d+px\]/)
+    expect(publicWebsiteLink).not.toMatch(/max-w-\[/)
+  })
+})
+
+describe('quick actions icons', () => {
+  it('uses Plus for Add Service and keeps the teal primary styling', () => {
+    expect(dashboard).toContain('<Plus aria-hidden="true" className="h-4 w-4 shrink-0" />')
+    expect(dashboard).toContain('bg-brand-teal px-4 py-2.5 text-sm font-semibold text-white')
+  })
+
+  it('uses Pencil for Edit Website and Users for Add Team Member', () => {
+    expect(dashboard).toContain('<Pencil aria-hidden="true" className="h-4 w-4 shrink-0" />')
+    expect(dashboard).toContain('<Users aria-hidden="true" className="h-4 w-4 shrink-0" />')
+  })
+
+  it('keeps one consistent icon size and stroke convention', () => {
+    // All quick-action icons are 16px with aria-hidden; no filled/oversized icons.
+    expect(dashboard).not.toMatch(/fill="currentColor"/)
+    expect(dashboard).toContain('className="h-4 w-4 shrink-0"')
+  })
+})
+
+describe('Services icon', () => {
+  const navBlock = () => {
+    const start = dashboard.indexOf('const nav = [')
+    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
+    return dashboard.slice(start, end)
+  }
+
+  it('maps Layers to Services only', () => {
+    const b = navBlock()
+    const services = b.slice(b.indexOf("id: 'services'"), b.indexOf("id: 'team'"))
+    expect(services).toContain('<Layers')
+    expect(services).not.toContain('<ClipboardList')
+    expect((b.match(/<Layers/g) ?? []).length).toBe(1)
+  })
+
+  it('leaves the Services label, size and accessibility attributes intact', () => {
+    const b = navBlock()
+    const services = b.slice(b.indexOf("id: 'services'"), b.indexOf("id: 'team'"))
+    expect(services).toContain('label: t.services')
+    expect(services).toContain('aria-hidden="true" className="h-4 w-4"')
+  })
+
+  it('keeps ClipboardList for the services stat card', () => {
+    expect(dashboard).toContain('<Stat icon={<ClipboardList className="h-5 w-5" />}')
+  })
+})
+
+describe('Overview icon', () => {
+  const navBlock = () => {
+    const start = dashboard.indexOf('const nav = [')
+    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
+    return dashboard.slice(start, end)
+  }
+
+  it('maps LayoutDashboard to Overview only', () => {
+    const b = navBlock()
+    const overview = b.slice(b.indexOf("id: 'overview'"), b.indexOf("id: 'customers'"))
+    expect(overview).toContain('<LayoutDashboard')
+    expect(overview).not.toContain('<CalendarDays')
+    // No other nav item uses LayoutDashboard.
+    expect((b.match(/<LayoutDashboard/g) ?? []).length).toBe(1)
+  })
+
+  it('keeps CalendarDays on Team & Schedule', () => {
+    const b = navBlock()
+    const team = b.slice(b.indexOf("id: 'team'"), b.indexOf("id: 'website'"))
+    expect(team).toContain('<CalendarDays')
+  })
+
+  it('keeps the Overview label, size and accessibility attributes', () => {
+    const b = navBlock()
+    const overview = b.slice(b.indexOf("id: 'overview'"), b.indexOf("id: 'customers'"))
+    expect(overview).toContain("label: locale === 'ar' ? 'نظرة عامة' : 'Overview'")
+    expect(overview).toContain('aria-hidden="true" className="h-4 w-4"')
+  })
+})
+
+describe('Team & Schedule icon', () => {
+  const navBlock = () => {
+    const start = dashboard.indexOf('const nav = [')
+    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
+    return dashboard.slice(start, end)
+  }
+
+  it('maps CalendarDays to Team & Schedule only', () => {
+    const team = navBlock().slice(navBlock().indexOf("id: 'team'"), navBlock().indexOf("id: 'website'"))
+    expect(team).toContain('<CalendarDays')
+    expect(team).not.toContain('<Users')
+  })
+
+  it('leaves the Customers icon as Users', () => {
+    const customers = navBlock().slice(navBlock().indexOf("id: 'customers'"), navBlock().indexOf("id: 'services'"))
+    expect(customers).toContain('<Users')
+    expect(customers).not.toContain('<CalendarDays')
+  })
+
+  it('keeps the icon size, aria-hidden and label unchanged', () => {
+    const team = navBlock().slice(navBlock().indexOf("id: 'team'"), navBlock().indexOf("id: 'website'"))
+    expect(team).toContain('aria-hidden="true" className="h-4 w-4"')
+    expect(team).toContain("label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule'")
+  })
 })
 
 describe('tenant display name', () => {
@@ -92,8 +421,12 @@ describe('tenant display name', () => {
     expect(h1).toContain('break-words')
   })
 
-  it('shows the display name in the sidebar workspace card too', () => {
-    expect(dashboard).toContain('{tenantDisplayName}</p>')
+  it('does not render the display name in a sidebar card (removed by design)', () => {
+    // The sidebar workspace identity card was removed: it duplicated the
+    // dashboard <h1> and was not a navigation target. The name is still shown
+    // in the page heading, and settings stay reachable via the Settings tab.
+    expect(dashboard).not.toContain('{tenantDisplayName}</p>')
+    expect(dashboard).not.toContain('mt-10 rounded-2xl bg-surface p-4')
   })
 })
 
@@ -104,7 +437,7 @@ describe('website editor spacing', () => {
 
   it('does not change other tabs spacing', () => {
     // Overview/customers/services/team already used mt-9 and keep it.
-    expect(dashboard).toContain('className="mt-9 grid gap-4 sm:grid-cols-3"')
+    expect(dashboard).toContain('className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"')
     expect(dashboard).toContain('className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"')
   })
 })

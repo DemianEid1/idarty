@@ -123,7 +123,9 @@ describe('no element is hidden to make the layout fit', () => {
   it('does not use display:none style utilities on data rows', () => {
     // The ONLY standalone `hidden` class is the desktop sidebar (hidden ...
     // lg:block). `aria-hidden` is accessibility metadata and `overflow-hidden`
-    // is the rounded progress bar — neither is layout hiding.
+    // is the rounded progress bar — neither is layout hiding. The onboarding
+    // success banner is conditionally RENDERED (not hidden) when setup is
+    // complete, so it adds no `hidden` utility.
     const layoutHidden = (dashboard.match(/(?<![-\w])hidden\b/g) ?? [])
     expect(layoutHidden.length).toBe(1)
     expect(dashboard).toContain('hidden w-64 border-e border-border bg-paper p-5 lg:block')

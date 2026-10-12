@@ -1,7 +1,7 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { and, count, desc, eq, gte, isNull, lt, not } from 'drizzle-orm'
-import { CalendarDays, ClipboardList, Users, Settings2, Sparkles } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ClipboardList, Layers, LayoutDashboard, Pencil, Plus, Settings2, Store, Users } from 'lucide-react'
 import { requireTenantAccess } from '@/lib/authz'
 import { db } from '@/lib/db'
 import { bookings, customers, services } from '@/lib/db/schema'
@@ -22,8 +22,10 @@ import { DateOverrideForm, DateOverrideDeleteButton } from '@/components/date-ov
 import { SignOutButton } from '@/components/sign-out-button'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import { DashboardMobileNav } from '@/components/dashboard-mobile-nav'
+import { PublicWebsiteLink } from '@/components/public-website-link'
+import { publicTenantUrl } from '@/lib/routes'
+import { OnboardingSuccess } from '@/components/onboarding-success'
 import { dateOverrides, staff, staffServices, staffTranslations, tenantTranslations, workingHours } from '@/lib/db/schema'
-import { BrandingForm } from '@/components/branding-form'
 import { WorkspaceSettingsForm } from '@/components/workspace-settings-form'
 import { Logo } from '@/components/logo'
 import { isBusinessType } from '@/lib/business-types'
@@ -87,10 +89,16 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
   endOfDay.setDate(endOfDay.getDate() + 1)
   const endOfWeek = new Date(startOfDay)
   endOfWeek.setDate(endOfWeek.getDate() + 7)
-  const [appointmentCount, customerCount, serviceCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, assignmentRows, overrideRows, tenantTranslation] = await Promise.all([
+  // Calendar month boundary, for the "completed this month" stat. Both dates
+  // are local-time midnights so the comparison matches how the dashboard already
+  // buckets "today".
+  const startOfMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), 1)
+  const startOfNextMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth() + 1, 1)
+  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, assignmentRows, overrideRows, tenantTranslation] = await Promise.all([
     db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')))),
     db.select({ value: count() }).from(customers).where(eq(customers.tenantId, access.tenant.id)),
     db.select({ value: count() }).from(services).where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true))),
+    db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'completed'), gte(bookings.startsAt, startOfMonth), lt(bookings.startsAt, startOfNextMonth))),
     db.select({ id: customers.id, name: customers.fullName, phone: customers.phoneE164, email: customers.email, createdAt: customers.createdAt }).from(customers).where(and(eq(customers.tenantId, access.tenant.id), isNull(customers.deletedAt))).orderBy(desc(customers.createdAt)).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')))).orderBy(bookings.startsAt),
     db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, endOfDay), lt(bookings.startsAt, endOfWeek), not(eq(bookings.status, 'cancelled')))).orderBy(bookings.startsAt).limit(10),
@@ -115,15 +123,31 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
   ]
 
   const nav = [
-    { id: 'overview', icon: <CalendarDays aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'نظرة عامة' : 'Overview' },
+    { id: 'overview', icon: <LayoutDashboard aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'نظرة عامة' : 'Overview' },
     { id: 'customers', icon: <Users aria-hidden="true" className="h-4 w-4" />, label: t.customers },
-    { id: 'services', icon: <ClipboardList aria-hidden="true" className="h-4 w-4" />, label: t.services },
-    { id: 'team', icon: <Users aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule' },
-    { id: 'website', icon: <Sparkles aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الموقع' : 'Website' },
+    { id: 'services', icon: <Layers aria-hidden="true" className="h-4 w-4" />, label: t.services },
+    { id: 'team', icon: <CalendarDays aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule' },
+    { id: 'website', icon: <Store aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الموقع' : 'Website' },
     { id: 'settings', icon: <Settings2 aria-hidden="true" className="h-4 w-4" />, label: t.settings },
   ]
 
   const isAdmin = (access.session.user as any).isPlatformAdmin === true
+
+  // ---------------------------------------------------------------------------
+  // Derived Overview data. Everything below comes from the queries above — no
+  // extra round-trips and no invented metrics.
+  // ---------------------------------------------------------------------------
+  const completedThisMonth = completedThisMonthCount[0]?.value ?? 0
+  // The tenant's public website URL, from the project's single source of
+  // truth (lib/routes.ts) — the same helper the settings screens use.
+  const publicUrl = publicTenantUrl(locale, slug)
+  const todayCount = appointmentCount[0]?.value ?? 0
+
+  // The four getting-started steps. "Add your first service" is implied by
+  // having an active service; because booking requires a staff member assigned
+  // to that service, services and team move together in practice.
+  const onboardingDone = checklist.filter((item) => item.done).length
+  const onboardingComplete = onboardingDone === checklist.length
 
   // The workspace's real display name: its localized translation, falling back
   // to the slug when a translation row is missing. Used for the page heading so
@@ -137,10 +161,9 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
         <a href="/" className="flex items-center" aria-label={locale === 'ar' ? 'إدارتي' : 'Idarty'}>
           <Logo locale={locale} height={26} />
         </a>
-        <div className="mt-10 rounded-2xl bg-surface p-4"><p className="text-xs text-ink-muted">{t.title}</p><p className="mt-1 truncate text-sm font-semibold">{tenantDisplayName}</p></div>
-        <nav className="mt-8 space-y-1 text-sm">
+        <nav className="mt-7 space-y-0.5 text-sm">
           {nav.map(n => (
-            <a key={n.id} className={`flex items-center gap-3 rounded-xl px-3 py-3 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 ${tab === n.id ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'}`} href={`?tab=${n.id}`}>
+            <a key={n.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 ${tab === n.id ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'}`} href={`?tab=${n.id}`}>
               {n.icon}{n.label}
             </a>
           ))}
@@ -175,8 +198,43 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
 
         {tab === 'overview' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 grid gap-4 sm:grid-cols-3"><Stat icon={<CalendarDays className="h-5 w-5" />} label={t.appointments} value={String(appointmentCount[0]?.value ?? 0)} /><Stat icon={<Users className="h-5 w-5" />} label={t.customers} value={String(customerCount[0]?.value ?? 0)} /><Stat icon={<ClipboardList className="h-5 w-5" />} label={t.services} value={String(serviceCount[0]?.value ?? 0)} /></div>
+            <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat icon={<CalendarDays className="h-5 w-5" />} label={t.appointments} value={String(todayCount)} hint={rtl ? 'مواعيد اليوم' : 'Scheduled for today'} />
+              <Stat icon={<Users className="h-5 w-5" />} label={t.customers} value={String(customerCount[0]?.value ?? 0)} hint={rtl ? 'إجمالي العملاء المسجّلين' : 'Total customers on record'} />
+              <Stat icon={<ClipboardList className="h-5 w-5" />} label={t.services} value={String(serviceCount[0]?.value ?? 0)} hint={rtl ? 'خدمات متاحة للحجز' : 'Services available to book'} />
+              <Stat icon={<CheckCircle2 className="h-5 w-5" />} label={rtl ? 'مكتملة هذا الشهر' : 'Completed this month'} value={String(completedThisMonth)} hint={rtl ? 'من بداية الشهر الحالي' : 'Since the start of this month'} />
+            </div>
 
+            {/* Standalone public website link card: identity + copy/open actions.
+                Kept out of the Quick Actions row so the website actions are not
+                duplicated and the row stays compact. */}
+            <div className="mt-6">
+              <PublicWebsiteLink url={publicUrl} locale={locale} siteName={tenantDisplayName} />
+            </div>
+
+            {/* Quick actions: the common owner tasks, kept to one compact row. */}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <a href="?tab=services" className="inline-flex items-center gap-2 rounded-xl bg-brand-teal px-4 py-2.5 text-sm font-semibold text-white outline-none transition hover:bg-[#0d6560] focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
+                <Plus aria-hidden="true" className="h-4 w-4 shrink-0" />
+                {rtl ? 'إضافة خدمة' : 'Add service'}
+              </a>
+              <a href="?tab=team" className="inline-flex items-center gap-2 rounded-xl border border-border bg-paper px-4 py-2.5 text-sm font-semibold text-[#374151] outline-none transition hover:border-brand-teal hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
+                <Users aria-hidden="true" className="h-4 w-4 shrink-0" />
+                {rtl ? 'إضافة عضو فريق' : 'Add team member'}
+              </a>
+              <a href="?tab=website" className="inline-flex items-center gap-2 rounded-xl border border-border bg-paper px-4 py-2.5 text-sm font-semibold text-[#374151] outline-none transition hover:border-brand-teal hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
+                <Pencil aria-hidden="true" className="h-4 w-4 shrink-0" />
+                {rtl ? 'تعديل الموقع' : 'Edit website'}
+              </a>
+            </div>
+
+            {onboardingComplete ? (
+              // All steps done: collapse the checklist into a dismissible
+              // success line so it stops dominating the Overview.
+              <div className="mt-6">
+                <OnboardingSuccess locale={locale} storageKey={`idarty:onboarding-success:${access.tenant.id}`} />
+              </div>
+            ) : (
             <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-8">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
@@ -184,12 +242,12 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
                   <p className="mt-1 text-sm text-ink-muted">{rtl ? 'أكمل هذه الخطوات لتجهيز مساحة العمل.' : 'Complete these steps to prepare your workspace.'}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-brand-teal">{checklist.filter((item) => item.done).length} / {checklist.length}</span>
+                  <span className="text-xs font-bold text-brand-teal">{onboardingDone} / {checklist.length}</span>
                 </div>
               </div>
 
               <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-[#f0f2f5]">
-                <div className="h-full bg-brand-teal transition-all duration-500" style={{ width: `${(checklist.filter(i => i.done).length / checklist.length) * 100}%` }} />
+                <div className="h-full bg-brand-teal transition-all duration-500" style={{ width: `${(onboardingDone / checklist.length) * 100}%` }} />
               </div>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -203,6 +261,8 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
                 ))}
               </div>
             </div>
+            )}
+
             <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{t.appointments}</h2><div className="mt-6 space-y-3">{todayBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-12 text-center text-sm text-ink-muted">{t.empty}</div> : todayBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-4"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
             <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'المواعيد القادمة' : 'Upcoming bookings'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'نظرة على الأيام السبعة القادمة.' : 'A view of the next seven days.'}</p></div><span className="shrink-0 rounded-full bg-[#fff5e8] px-3 py-1 text-xs font-semibold text-[#b86a12]">{upcomingBookings.length}</span></div><div className="mt-5 space-y-2">{upcomingBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا توجد مواعيد قادمة.' : 'No upcoming bookings.'}</div> : upcomingBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
           </div>
@@ -280,12 +340,6 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
               <p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'قم بتحديث اسم مساحة عملك ونوع نشاطك.' : 'Update your workspace name and business type.'}</p>
               <WorkspaceSettingsForm locale={locale} slug={slug} currentName={tenantTranslation?.name ?? access.tenant.slug} currentType={isBusinessType(access.tenant.businessType) ? access.tenant.businessType : 'other'} />
             </div>
-
-            <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
-              <h2 className="text-lg font-semibold">{locale === 'ar' ? 'الهوية البصرية' : 'Branding'}</h2>
-              <p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'اختر ألوان مساحة عملك وشعارك.' : 'Customize your workspace logo and color palette.'}</p>
-              <BrandingForm locale={locale} slug={slug} currentPrimary={tenantTheme.primaryColor ?? '#0F766E'} currentAccent={tenantTheme.accentColor ?? '#f0faf9'} currentLogo={tenantTheme.logo ?? ''} />
-            </div>
           </div>
         )}
       </section>
@@ -293,6 +347,6 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
   </main>
 }
 
-function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return <div className="rounded-2xl border border-border bg-paper p-5 shadow-float"><div className="flex items-center justify-between"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f0faf9] text-brand-teal">{icon}</span><span className="text-2xl font-semibold">{value}</span></div><p className="mt-4 text-sm text-ink-muted">{label}</p></div>
+function Stat({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint: string }) {
+  return <div className="rounded-2xl border border-border bg-paper p-5 shadow-float"><div className="flex items-center justify-between"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f0faf9] text-brand-teal">{icon}</span><span className="text-2xl font-semibold">{value}</span></div><p className="mt-4 text-sm font-semibold text-[#172033]">{label}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{hint}</p></div>
 }
