@@ -16,16 +16,18 @@ import { resolve } from 'node:path'
 const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8')
 
 const dashboard = read('../app/[locale]/tenants/[slug]/dashboard/page.tsx')
+// The persistent shell (sidebar + header) now lives in the layout.
+const shell = read('../app/[locale]/tenants/[slug]/dashboard/layout.tsx')
 const editor = read('../components/website-editor.tsx')
 const staffServices = read('../components/staff-services-form.tsx')
 
 describe('no horizontal overflow: flex rows wrap and shrink', () => {
   it('the dashboard header stacks on mobile and only becomes a row at sm', () => {
-    expect(dashboard).toContain('flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between')
+    expect(shell).toContain('flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between')
   })
 
   it('the header meta group wraps', () => {
-    expect(dashboard).toContain('flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3')
+    expect(shell).toContain('flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3')
   })
 
   it('list rows that pair content with actions wrap', () => {
@@ -109,7 +111,7 @@ describe('mobile card padding is consistent and fluid', () => {
   })
 
   it('the outer section uses fluid padding, not a fixed p-4', () => {
-    expect(dashboard).toContain('min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:p-10')
+    expect(shell).toContain('min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:p-10')
   })
 })
 
@@ -126,8 +128,11 @@ describe('no element is hidden to make the layout fit', () => {
     // is the rounded progress bar — neither is layout hiding. The onboarding
     // success banner is conditionally RENDERED (not hidden) when setup is
     // complete, so it adds no `hidden` utility.
-    const layoutHidden = (dashboard.match(/(?<![-\w])hidden\b/g) ?? [])
-    expect(layoutHidden.length).toBe(1)
-    expect(dashboard).toContain('hidden w-64 border-e border-border bg-paper p-5 lg:block')
+    // The shell owns the one layout-`hidden` class (the desktop sidebar).
+    const shellHidden = (shell.match(/(?<![-\w])hidden\b/g) ?? [])
+    expect(shellHidden.length).toBe(1)
+    expect(shell).toContain(
+      'hidden w-64 shrink-0 border-e border-border bg-paper lg:sticky lg:top-0 lg:h-screen lg:flex lg:flex-col'
+    )
   })
 })

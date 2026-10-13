@@ -1,16 +1,17 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { and, count, desc, eq, gte, isNull, lt, not } from 'drizzle-orm'
-import { CalendarDays, CheckCircle2, ClipboardList, Layers, LayoutDashboard, Pencil, Plus, Settings2, Store, Users } from 'lucide-react'
+import { aliasedTable, and, count, desc, eq, gte, isNull, lt, not } from 'drizzle-orm'
+import { CalendarDays, CheckCircle2, ClipboardList, Pencil, Plus, Settings2, Users } from 'lucide-react'
 import { requireTenantAccess } from '@/lib/authz'
+import { dashboardCopy } from '@/lib/dashboard-nav'
 import { db } from '@/lib/db'
-import { bookings, customers, services } from '@/lib/db/schema'
+import { bookingItems, bookings, customers, services } from '@/lib/db/schema'
 import type { Locale } from '@/lib/i18n'
 import { serviceTranslations, websiteConfig } from '@/lib/db/schema'
 import { safeParseWebsiteConfig } from '@/lib/website-config'
 import { WebsiteEditor } from '@/components/website-editor'
 import { ServiceForm } from '@/components/service-form'
-import { ServiceArchiveButton } from '@/components/service-archive-button'
+import { ServiceDeleteButton } from '@/components/service-delete-button'
 import { ServiceEditForm } from '@/components/service-edit-form'
 import { WorkingHoursForm } from '@/components/working-hours-form'
 import { BookingStatusActions } from '@/components/booking-status-actions'
@@ -20,20 +21,15 @@ import { StaffArchiveButton } from '@/components/staff-archive-button'
 import { StaffServicesForm } from '@/components/staff-services-form'
 import { DateOverrideForm, DateOverrideDeleteButton } from '@/components/date-override-form'
 import { SignOutButton } from '@/components/sign-out-button'
-import { LocaleSwitcher } from '@/components/locale-switcher'
-import { DashboardMobileNav } from '@/components/dashboard-mobile-nav'
 import { PublicWebsiteLink } from '@/components/public-website-link'
 import { publicTenantUrl } from '@/lib/routes'
 import { OnboardingSuccess } from '@/components/onboarding-success'
 import { dateOverrides, staff, staffServices, staffTranslations, tenantTranslations, workingHours } from '@/lib/db/schema'
 import { WorkspaceSettingsForm } from '@/components/workspace-settings-form'
-import { Logo } from '@/components/logo'
+import { ServiceImageForm } from '@/components/service-image-form'
+import { serviceFocalPoint, numericCrop } from '@/lib/image-focal-point'
 import { isBusinessType } from '@/lib/business-types'
 
-const copy = {
-  ar: { title: 'مساحة العمل', subtitle: 'نظرة هادئة على يومك وإدارة فريقك.', appointments: 'مواعيد اليوم', customers: 'العملاء', services: 'الخدمات', settings: 'الإعدادات', empty: 'لا توجد مواعيد اليوم بعد.' },
-  en: { title: 'Workspace', subtitle: 'A calm view of your day and your team.', appointments: "Today's appointments", customers: 'Customers', services: 'Services', settings: 'Settings', empty: 'No appointments scheduled today.' },
-} as const
 
 export default async function TenantDashboard(props: { params: Promise<{ locale: Locale; slug: string }>; searchParams: Promise<{ tab?: string; page?: string }> }) {
   const { locale, slug } = await props.params
@@ -42,7 +38,7 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
   const page = Math.max(1, parseInt(searchParams.page ?? '1', 10) || 1)
   const pageSize = 12
   const rtl = locale === 'ar'
-  const t = copy[locale]
+  const t = dashboardCopy[locale]
   let access
   try {
     access = await requireTenantAccess(await headers(), slug)
@@ -94,7 +90,12 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
   // buckets "today".
   const startOfMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), 1)
   const startOfNextMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth() + 1, 1)
-  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, assignmentRows, overrideRows, tenantTranslation] = await Promise.all([
+
+  const fallbackLocale = locale === 'ar' ? 'en' : 'ar'
+  const fallbackServiceTranslations = aliasedTable(serviceTranslations, 'fallback_dash_service_translations')
+  const fallbackStaffTranslations = aliasedTable(staffTranslations, 'fallback_dash_staff_translations')
+
+  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, assignmentRows, overrideRows, tenantTranslation, serviceBookingCounts] = await Promise.all([
     db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')))),
     db.select({ value: count() }).from(customers).where(eq(customers.tenantId, access.tenant.id)),
     db.select({ value: count() }).from(services).where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true))),
@@ -102,13 +103,48 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
     db.select({ id: customers.id, name: customers.fullName, phone: customers.phoneE164, email: customers.email, createdAt: customers.createdAt }).from(customers).where(and(eq(customers.tenantId, access.tenant.id), isNull(customers.deletedAt))).orderBy(desc(customers.createdAt)).limit(pageSize).offset((page - 1) * pageSize),
     db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')))).orderBy(bookings.startsAt),
     db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, endOfDay), lt(bookings.startsAt, endOfWeek), not(eq(bookings.status, 'cancelled')))).orderBy(bookings.startsAt).limit(10),
-    db.select({ id: services.id, durationMin: services.durationMin, priceAmount: services.priceAmount, name: serviceTranslations.name }).from(services).leftJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale))).where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true))).orderBy(services.sortOrder),
+    db.select({
+      id: services.id,
+      durationMin: services.durationMin,
+      priceAmount: services.priceAmount,
+      name: serviceTranslations.name,
+      fallbackName: fallbackServiceTranslations.name,
+      image: services.image,
+      imageFocalX: services.imageFocalX,
+      imageFocalY: services.imageFocalY,
+      imageCropX: services.imageCropX,
+      imageCropY: services.imageCropY,
+      imageCropWidth: services.imageCropWidth,
+      imageCropHeight: services.imageCropHeight,
+    })
+      .from(services)
+      .leftJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale)))
+      .leftJoin(fallbackServiceTranslations, and(eq(fallbackServiceTranslations.serviceId, services.id), eq(fallbackServiceTranslations.locale, fallbackLocale)))
+      .where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true)))
+      .orderBy(services.sortOrder),
     db.select({ weekday: workingHours.weekday, startTime: workingHours.startTime, endTime: workingHours.endTime }).from(workingHours).where(and(eq(workingHours.tenantId, access.tenant.id), isNull(workingHours.staffId))),
-    db.select({ id: staff.id, name: staffTranslations.name, email: staff.email, phone: staff.phoneE164 }).from(staff).leftJoin(staffTranslations, and(eq(staffTranslations.staffId, staff.id), eq(staffTranslations.locale, locale))).where(and(eq(staff.tenantId, access.tenant.id), eq(staff.isActive, true), isNull(staff.deletedAt))).orderBy(staff.sortOrder),
+    db.select({
+      id: staff.id,
+      name: staffTranslations.name,
+      fallbackName: fallbackStaffTranslations.name,
+      email: staff.email,
+      phone: staff.phoneE164,
+    })
+      .from(staff)
+      .leftJoin(staffTranslations, and(eq(staffTranslations.staffId, staff.id), eq(staffTranslations.locale, locale)))
+      .leftJoin(fallbackStaffTranslations, and(eq(fallbackStaffTranslations.staffId, staff.id), eq(fallbackStaffTranslations.locale, fallbackLocale)))
+      .where(and(eq(staff.tenantId, access.tenant.id), eq(staff.isActive, true), isNull(staff.deletedAt)))
+      .orderBy(staff.sortOrder),
     db.select({ staffId: staffServices.staffId, serviceId: staffServices.serviceId }).from(staffServices).where(eq(staffServices.tenantId, access.tenant.id)),
     db.select({ id: dateOverrides.id, startDate: dateOverrides.startDate, endDate: dateOverrides.endDate, kind: dateOverrides.kind, label: dateOverrides.label, startTime: dateOverrides.startTime, endTime: dateOverrides.endTime }).from(dateOverrides).where(and(eq(dateOverrides.tenantId, access.tenant.id), isNull(dateOverrides.staffId))).orderBy(dateOverrides.startDate),
-    db.query.tenantTranslations.findFirst({ where: and(eq(tenantTranslations.tenantId, access.tenant.id), eq(tenantTranslations.locale, locale)) })
+    db.query.tenantTranslations.findFirst({ where: and(eq(tenantTranslations.tenantId, access.tenant.id), eq(tenantTranslations.locale, locale)) }),
+    // Booking counts per service, so the delete confirmation can state the real
+    // consequence before the tenant commits. Derived from data the page already
+    // has access to — one grouped query, no per-row round trip.
+    db.select({ serviceId: bookingItems.serviceId, value: count() }).from(bookingItems).where(eq(bookingItems.tenantId, access.tenant.id)).groupBy(bookingItems.serviceId),
   ])
+
+  const bookingsByService = new Map(serviceBookingCounts.map((r) => [r.serviceId, r.value]))
 
   const tenantTheme = (access.tenant as any).theme as Record<string, string> | null ?? {}
   const websiteConfigRow = await db.query.websiteConfig.findFirst({ where: eq(websiteConfig.tenantId, access.tenant.id) })
@@ -122,16 +158,6 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
     { done: true, label: rtl ? 'شارك رابط الحجز العام' : 'Share your public booking link', href: `/${locale}/tenants/${slug}` },
   ]
 
-  const nav = [
-    { id: 'overview', icon: <LayoutDashboard aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'نظرة عامة' : 'Overview' },
-    { id: 'customers', icon: <Users aria-hidden="true" className="h-4 w-4" />, label: t.customers },
-    { id: 'services', icon: <Layers aria-hidden="true" className="h-4 w-4" />, label: t.services },
-    { id: 'team', icon: <CalendarDays aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule' },
-    { id: 'website', icon: <Store aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الموقع' : 'Website' },
-    { id: 'settings', icon: <Settings2 aria-hidden="true" className="h-4 w-4" />, label: t.settings },
-  ]
-
-  const isAdmin = (access.session.user as any).isPlatformAdmin === true
 
   // ---------------------------------------------------------------------------
   // Derived Overview data. Everything below comes from the queries above — no
@@ -153,48 +179,9 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
   // to the slug when a translation row is missing. Used for the page heading so
   // the dashboard is not headed by the generic "Workspace" label.
   const tenantDisplayName = tenantTranslation?.name?.trim() || access.tenant.slug
-  const adminLabel = locale === 'ar' ? 'لوحة الإدارة' : 'Admin Panel'
 
-  return <main dir={rtl ? 'rtl' : 'ltr'} className="min-h-screen bg-[#f7f8fb] text-[#172033]">
-    <div className="mx-auto flex min-h-screen max-w-7xl">
-      <aside className="hidden w-64 border-e border-border bg-paper p-5 lg:block">
-        <a href="/" className="flex items-center" aria-label={locale === 'ar' ? 'إدارتي' : 'Idarty'}>
-          <Logo locale={locale} height={26} />
-        </a>
-        <nav className="mt-7 space-y-0.5 text-sm">
-          {nav.map(n => (
-            <a key={n.id} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 ${tab === n.id ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'}`} href={`?tab=${n.id}`}>
-              {n.icon}{n.label}
-            </a>
-          ))}
-        </nav>
-        {isAdmin && (
-          <div className="mt-6 border-t border-border pt-6">
-            <a href={`/${locale}/admin`} className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-3 text-sm font-semibold text-amber-700 outline-none transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500">
-              <Settings2 aria-hidden="true" className="h-4 w-4" />
-              {adminLabel}
-            </a>
-          </div>
-        )}
-      </aside>
-      <section className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:p-10">
-        <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <DashboardMobileNav
-              locale={locale}
-              items={nav}
-              activeTab={tab}
-              adminHref={isAdmin ? `/${locale}/admin` : undefined}
-              adminLabel={adminLabel}
-            />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-ink-muted">{access.session.user.name}</p>
-              <h1 className="mt-2 break-words text-2xl font-semibold tracking-tight sm:text-3xl">{tenantDisplayName}</h1>
-              <p className="mt-2 text-sm text-ink-muted">{t.subtitle}</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">{isAdmin && <a href={`/${locale}/admin`} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 outline-none transition hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500">{locale === 'ar' ? 'الإدارة' : 'Admin'}</a>}<span className="rounded-full bg-[#eaf8f1] px-3 py-1.5 text-xs font-semibold text-[#24865b]">{access.membership.role}</span><LocaleSwitcher currentLocale={locale} /><SignOutButton label={rtl ? 'تسجيل الخروج' : 'Sign out'} /></div>
-        </header>
+  return (
+    <>
 
         {tab === 'overview' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -311,9 +298,11 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
               }}
               services={serviceRows.map((s) => ({
                 id: s.id,
-                name: s.name,
+                name: s.name || s.fallbackName,
                 durationMin: s.durationMin,
                 priceAmount: String(s.priceAmount),
+                image: s.image ?? null,
+                imageCrop: numericCrop(s),
               }))}
               canPublish={['admin', 'owner'].includes(access.membership.role)}
             />
@@ -321,13 +310,13 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
         )}
         {tab === 'services' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.services}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أدر الخدمات التي يمكن حجزها من موقعك.' : 'Manage services customers can book.'}</p></div><span className="rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{serviceRows.length}</span></div><div className="mt-5 space-y-2">{serviceRows.map((service) => <div key={service.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{service.name ?? (locale === 'ar' ? 'خدمة بدون ترجمة' : 'Untitled service')}</p><p className="mt-1 text-xs text-ink-muted">{service.durationMin} {locale === 'ar' ? 'دقيقة' : 'min'} · {service.priceAmount} {access.tenant.currency}</p></div><div className="flex shrink-0 items-center gap-3"><ServiceEditForm slug={slug} locale={locale} service={{ id: service.id, name: service.name ?? '', durationMin: service.durationMin, priceAmount: String(service.priceAmount) }} /><ServiceArchiveButton slug={slug} locale={locale} serviceId={service.id} /></div></div>)}</div><ServiceForm locale={locale} slug={slug} /></div>
+            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.services}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أدر الخدمات التي يمكن حجزها من موقعك.' : 'Manage services customers can book.'}</p></div><span className="rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{serviceRows.length}</span></div><div className="mt-5 space-y-2">{serviceRows.map((service) => { const serviceName = service.name || service.fallbackName; return <div key={service.id} className="rounded-2xl bg-surface px-4 py-3"><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{serviceName ?? (locale === 'ar' ? 'خدمة بدون ترجمة' : 'Untitled service')}</p><p className="mt-1 text-xs text-ink-muted">{service.durationMin} {locale === 'ar' ? 'دقيقة' : 'min'} · {service.priceAmount} {access.tenant.currency}</p></div><div className="flex min-w-0 flex-wrap items-center gap-3"><ServiceEditForm slug={slug} locale={locale} service={{ id: service.id, name: serviceName ?? '', durationMin: service.durationMin, priceAmount: String(service.priceAmount) }} /><ServiceDeleteButton slug={slug} locale={locale} serviceId={service.id} serviceName={serviceName ?? (locale === 'ar' ? 'خدمة بدون ترجمة' : 'Untitled service')} bookingCount={bookingsByService.get(service.id) ?? 0} /></div></div></div> })}</div><ServiceForm locale={locale} slug={slug} /></div>
           </div>
         )}
 
         {tab === 'team' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'الفريق' : 'Team'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف أعضاء الفريق الذين يقدمون الخدمات.' : 'Add the people who provide your services.'}</p></div><span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{staffRows.length}</span></div><div className="mt-5 space-y-3">{staffRows.map((person) => <div key={person.id} className="rounded-2xl bg-surface px-4 py-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{person.name ?? (locale === 'ar' ? 'عضو فريق' : 'Team member')}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{person.email ?? person.phone ?? ''}</p></div><div className="flex shrink-0 items-center gap-3"><StaffEditForm slug={slug} locale={locale} staff={{ id: person.id, name: person.name ?? '', email: person.email ?? '', phone: person.phone ?? '' }} /><StaffArchiveButton slug={slug} locale={locale} staffId={person.id} /></div></div><StaffServicesForm slug={slug} locale={locale} staffId={person.id} services={serviceRows.map((service) => ({ id: service.id, name: service.name ?? (rtl ? 'خدمة' : 'Service') }))} selected={assignmentRows.filter((assignment) => assignment.staffId === person.id).map((assignment) => assignment.serviceId)} /></div>)}</div><StaffForm locale={locale} slug={slug} /></div>
+            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'الفريق' : 'Team'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف أعضاء الفريق الذين يقدمون الخدمات.' : 'Add the people who provide your services.'}</p></div><span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{staffRows.length}</span></div><div className="mt-5 space-y-3">{staffRows.map((person) => { const staffName = person.name || person.fallbackName; return <div key={person.id} className="rounded-2xl bg-surface px-4 py-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{staffName ?? (locale === 'ar' ? 'عضو فريق' : 'Team member')}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{person.email ?? person.phone ?? ''}</p></div><div className="flex shrink-0 items-center gap-3"><StaffEditForm slug={slug} locale={locale} staff={{ id: person.id, name: staffName ?? '', email: person.email ?? '', phone: person.phone ?? '' }} /><StaffArchiveButton slug={slug} locale={locale} staffId={person.id} /></div></div><StaffServicesForm slug={slug} locale={locale} staffId={person.id} services={serviceRows.map((service) => ({ id: service.id, name: service.name || service.fallbackName || (rtl ? 'خدمة' : 'Service') }))} selected={assignmentRows.filter((assignment) => assignment.staffId === person.id).map((assignment) => assignment.serviceId)} /></div> })}</div><StaffForm locale={locale} slug={slug} /></div>
             <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'ساعات العمل' : 'Working hours'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'حدد الأوقات العامة المتاحة للحجز.' : 'Set the general hours available for bookings.'}</p><WorkingHoursForm locale={locale} slug={slug} hours={hoursRows} /></div>
             <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'استثناءات المواعيد' : 'Date overrides'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف العطلات أو ساعات العمل الخاصة.' : 'Add holidays or custom hours.'}</p><div className="mt-5 space-y-2">{overrideRows.map((override) => <div key={override.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{override.label ?? (override.kind === 'closed' ? (locale === 'ar' ? 'مغلق' : 'Closed') : (locale === 'ar' ? 'ساعات مخصصة' : 'Custom hours'))}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{override.startDate} → {override.endDate}{override.startTime ? ` · ${override.startTime}–${override.endTime}` : ''}</p></div><DateOverrideDeleteButton locale={locale} slug={slug} overrideId={override.id} /></div>)}</div><DateOverrideForm locale={locale} slug={slug} /></div>
           </div>
@@ -342,9 +331,8 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
             </div>
           </div>
         )}
-      </section>
-    </div>
-  </main>
+    </>
+  )
 }
 
 function Stat({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint: string }) {

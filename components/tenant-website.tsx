@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { ArrowRight, CalendarDays, Clock3, MapPin, Phone, Sparkles } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
 import { resolveOrderedSectionTypes, resolveSiteBackground, type WebsiteConfig } from '@/lib/website-config'
+import { focalPointToCss, resolveFocalPoint, type FocalPoint } from '@/lib/image-focal-point'
+import { cropToLayerStyle, resolveCrop } from '@/lib/image-crop'
 import { LogoIcon } from '@/components/logo'
 
 // ---------------------------------------------------------------------------
@@ -32,6 +34,11 @@ export interface TenantWebsiteService {
   description: string | null
   durationMin: number
   priceAmount: string
+  image?: string | null
+  /** Legacy focal point for the service image crop; absent/null means centre. */
+  imageFocalPoint?: FocalPoint | null
+  /** Pre-computed style for the crop layer. Null/absent => show the whole image. */
+  cropLayer?: React.CSSProperties | null
 }
 
 export interface TenantWebsiteHours {
@@ -139,6 +146,24 @@ export function TenantWebsite({
   const businessPhone = tenant.phoneE164 ?? null
   const ctaLabel = rtl ? (heroAr.ctaLabel || 'احجز موعداً') : (heroEn.ctaLabel || 'Book an appointment')
 
+  // Optional Hero background image (base64 data URL). When present, the hero
+  // section renders it as a background image with the existing text overlaid
+  // on top — text, buttons, layout, and colors are all preserved unchanged.
+  const heroImage = themeOverride?.heroImage || ''
+
+  // Where the hero image stays visible when the hero band crops it, and how
+  // opaque the image layer is. Both default to the pre-feature behaviour
+  // (centre crop, fully opaque) when absent from a stored configuration.
+  //
+  // `heroFocalCss` is used ONLY for legacy configs that predate the cropper and
+  // stored a focal point instead of a crop rectangle.
+  const heroFocalCss = focalPointToCss(themeOverride?.heroImageFocalPoint)
+  const heroImageOpacity =
+    typeof themeOverride?.heroImageOpacity === 'number' ? themeOverride.heroImageOpacity : 1
+  // The crop framed in the cropper. Null => show the whole image.
+  const heroCrop = resolveCrop(themeOverride?.heroImageCrop)
+  const heroCropLayer = cropToLayerStyle(themeOverride?.heroImageCrop)
+
   // -------------------------------------------------------------------------
   // Services section content: config override > localized defaults
   // -------------------------------------------------------------------------
@@ -178,43 +203,119 @@ export function TenantWebsite({
   // Section renderers
   // -------------------------------------------------------------------------
   const renderHero = () => (
-    <section key="hero" className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20 lg:py-24">
-      <div className="max-w-2xl">
-        <p
-          className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold break-words"
-          style={{ color: 'var(--site-primary)', borderColor: 'var(--site-primary)' }}
-        >
-          <Sparkles className="h-4 w-4 shrink-0" />
-          {businessTagline}
-        </p>
-        <h1 className="mt-4 text-4xl font-bold tracking-tight break-words sm:text-5xl lg:text-6xl">{businessName}</h1>
-        <p className="mt-5 max-w-xl text-base leading-7 text-[#6f7b90] break-words sm:text-lg sm:leading-8">{businessDescription}</p>
-        <div className="mt-7 flex flex-wrap gap-4 text-sm text-[#748096]">
-          {businessAddress && (
-            <span className="flex items-center gap-2 break-words">
-              <MapPin className="h-4 w-4 shrink-0" style={{ color: 'var(--site-primary)' }} />
-              {businessAddress}
-            </span>
-          )}
-          <span className="flex items-center gap-2">
-            <Clock3 className="h-4 w-4 shrink-0" style={{ color: 'var(--site-primary)' }} />
-            {hoursLabel}
-          </span>
-          {businessPhone && (
-            <span className="flex items-center gap-2 break-words">
-              <Phone className="h-4 w-4 shrink-0" style={{ color: 'var(--site-primary)' }} />
-              {businessPhone}
-            </span>
+    <section
+      key="hero"
+      // FULL-BLEED: the section itself spans the viewport edge to edge. The
+      // readable content is constrained by the inner `max-w-6xl` wrapper below,
+      // so text/CTA stay aligned with the rest of the site while the image
+      // reaches both edges.
+      //
+      // `relative` + `overflow-hidden` are applied ONLY when an image is
+      // present; with no image the class list stays the historical text-only
+      // hero so existing sites cannot regress.
+      className={heroImage ? 'relative w-full overflow-hidden' : 'w-full'}
+    >
+      {heroImage && (
+        // Opacity is applied to this IMAGE WRAPPER ONLY (it contains nothing but
+        // the image), so the overlay, text and buttons below/above are never
+        // made translucent.
+        <div className="absolute inset-0" aria-hidden="true" style={{ opacity: heroImageOpacity }}>
+          {heroCropLayer ? (
+            // A crop is stored: reproduce it exactly by scaling an oversized
+            // inner layer and clipping it. The stored image is never re-encoded.
+            <div style={heroCropLayer}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={heroImage}
+                alt=""
+                className="h-full w-full object-cover"
+                style={{ maxWidth: 'none' }}
+              />
+            </div>
+          ) : (
+            // No crop: the historical rendering — `cover` + centre, or the
+            // legacy focal point when an older config stored one.
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundImage: `url("${heroImage}")`,
+                backgroundSize: 'cover',
+                backgroundPosition: heroFocalCss,
+                backgroundRepeat: 'no-repeat',
+              }}
+            />
           )}
         </div>
-        <Link
-          href={`/${locale}/tenants/${slug}/book`}
-          className="mt-8 inline-flex max-w-full items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
-          style={{ backgroundColor: 'var(--site-primary)' }}
-        >
-          <span className="break-words">{ctaLabel}</span>
-          <ArrowRight className="h-4 w-4 shrink-0" />
-        </Link>
+      )}
+
+      {/* Readability overlay — a soft gradient that darkens only the area behind
+          the text, so the image keeps its natural colours and contrast
+          everywhere else. (It previously used a flat `bg-white/80`, which
+          washed the whole image out even at 100% opacity.) It is a separate
+          element, so the image's own opacity never affects it. */}
+      {heroImage && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/20 to-transparent"
+        />
+      )}
+
+      {/* Content container — matches the site's normal readable width. */}
+      <div className="relative mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20 lg:py-24">
+        <div className="max-w-2xl">
+          <p
+            className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold break-words"
+            style={
+              heroImage
+                ? { color: '#fff', borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(0,0,0,0.25)' }
+                : { color: 'var(--site-primary)', borderColor: 'var(--site-primary)' }
+            }
+          >
+            <Sparkles className="h-4 w-4 shrink-0" />
+            {businessTagline}
+          </p>
+          <h1
+            className="mt-4 text-4xl font-bold tracking-tight break-words sm:text-5xl lg:text-6xl"
+            style={heroImage ? { color: '#fff' } : undefined}
+          >
+            {businessName}
+          </h1>
+          <p
+            className="mt-5 max-w-xl text-base leading-7 break-words sm:text-lg sm:leading-8"
+            style={{ color: heroImage ? 'rgba(255,255,255,0.92)' : '#6f7b90' }}
+          >
+            {businessDescription}
+          </p>
+          <div
+            className="mt-7 flex flex-wrap gap-4 text-sm"
+            style={{ color: heroImage ? 'rgba(255,255,255,0.88)' : '#748096' }}
+          >
+            {businessAddress && (
+              <span className="flex items-center gap-2 break-words">
+                <MapPin className="h-4 w-4 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+                {businessAddress}
+              </span>
+            )}
+            <span className="flex items-center gap-2">
+              <Clock3 className="h-4 w-4 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+              {hoursLabel}
+            </span>
+            {businessPhone && (
+              <span className="flex items-center gap-2 break-words">
+                <Phone className="h-4 w-4 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+                {businessPhone}
+              </span>
+            )}
+          </div>
+          <Link
+            href={`/${locale}/tenants/${slug}/book`}
+            className="mt-8 inline-flex max-w-full items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
+            style={{ backgroundColor: 'var(--site-primary)' }}
+          >
+            <span className="break-words">{ctaLabel}</span>
+            <ArrowRight className="h-4 w-4 shrink-0" />
+          </Link>
+        </div>
       </div>
     </section>
   )
@@ -240,26 +341,69 @@ export function TenantWebsite({
               {serviceRows.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex min-w-0 flex-col rounded-2xl border border-[#e6eaf1] bg-paper p-6 shadow-sm transition hover:shadow-md"
+                  className="group flex min-w-0 flex-col rounded-2xl border border-[#e6eaf1] bg-paper shadow-sm transition hover:shadow-md"
                 >
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-base font-semibold break-words">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
-                    {item.description && <p className="mt-2 text-sm leading-6 text-[#6f7b90] break-words">{item.description}</p>}
+                  {/* ONE consistent image area for EVERY card, image or not, so a
+                      business with only some services photographed still gets a
+                      tidy grid: same height, same rhythm, no short cards.
+                      `aspect-[16/10]` matches CROP_ASPECTS.service, which is the
+                      ratio the cropper frames. */}
+                  <div className="relative aspect-[16/10] w-full shrink-0 overflow-hidden rounded-t-2xl bg-[#f0f2f5]">
+                    {item.image ? (
+                      item.cropLayer ? (
+                        // A crop is stored: reproduce it exactly.
+                        <div style={item.cropLayer}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.image}
+                            alt=""
+                            className="h-full w-full object-cover"
+                            style={{ maxWidth: 'none' }}
+                            loading="lazy"
+                          />
+                        </div>
+                      ) : (
+                        <img
+                          src={item.image}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          style={{ objectPosition: focalPointToCss(item.imageFocalPoint) }}
+                          loading="lazy"
+                        />
+                      )
+                    ) : (
+                      // Deliberate neutral placeholder — a restrained
+                      // service-related mark on the site's own surface tint,
+                      // never borrowed imagery.
+                      <div
+                        className="flex h-full w-full items-center justify-center"
+                        aria-hidden="true"
+                      >
+                        <Sparkles className="h-7 w-7 text-[#c3ccd9]" />
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eef0f4] pt-4">
-                    <div className="min-w-0">
-                      <span className="text-lg font-bold" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
-                      <span className="text-sm text-[#929bad]"> {tenant.currency}</span>
-                      <p className="mt-0.5 text-xs text-[#929bad]">{durationLabel(item.durationMin)}</p>
+
+                  <div className="flex min-w-0 flex-1 flex-col p-6">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-base font-semibold break-words">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
+                      {item.description && <p className="mt-2 text-sm leading-6 text-[#6f7b90] break-words">{item.description}</p>}
                     </div>
-                    <Link
-                      href={`/${locale}/tenants/${slug}/book?service=${item.id}`}
-                      className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
-                      style={{ backgroundColor: 'var(--site-primary)' }}
-                    >
-                      {rtl ? 'احجز' : 'Book'}
-                      <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                    </Link>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eef0f4] pt-4">
+                      <div className="min-w-0">
+                        <span className="text-lg font-bold" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
+                        <span className="text-sm text-[#929bad]"> {tenant.currency}</span>
+                        <p className="mt-0.5 text-xs text-[#929bad]">{durationLabel(item.durationMin)}</p>
+                      </div>
+                      <Link
+                        href={`/${locale}/tenants/${slug}/book?service=${item.id}`}
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
+                        style={{ backgroundColor: 'var(--site-primary)' }}
+                      >
+                        {rtl ? 'احجز' : 'Book'}
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                      </Link>
+                    </div>
                   </div>
                 </div>
               ))}

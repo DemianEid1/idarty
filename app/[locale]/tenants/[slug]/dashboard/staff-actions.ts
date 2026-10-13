@@ -52,9 +52,21 @@ export async function updateStaff(formData: FormData) {
   const access = await requireTenantAccess(await headers(), input.slug, 'manager')
   await db.transaction(async (tx) => {
     await tx.update(staff).set({ ...staffEditPatch(input.email || null, input.phone || null), updatedAt: new Date() }).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, access.tenant.id), eq(staff.isActive, true)))
-    await tx.update(staffTranslations).set({ name: input.name }).where(and(eq(staffTranslations.staffId, input.staffId), eq(staffTranslations.tenantId, access.tenant.id), eq(staffTranslations.locale, input.locale)))
+    await tx
+      .insert(staffTranslations)
+      .values({
+        tenantId: access.tenant.id,
+        staffId: input.staffId,
+        locale: input.locale,
+        name: input.name,
+      })
+      .onConflictDoUpdate({
+        target: [staffTranslations.staffId, staffTranslations.locale],
+        set: { name: input.name },
+      })
   })
   revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)
+  revalidatePath(`/${input.locale === 'ar' ? 'en' : 'ar'}/tenants/${input.slug}/dashboard`)
   return { ok: true as const }
 }
 
@@ -63,6 +75,7 @@ export async function archiveStaff(formData: FormData) {
   const access = await requireTenantAccess(await headers(), input.slug, 'manager')
   await db.update(staff).set({ isActive: false, deletedAt: new Date(), updatedAt: new Date() }).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, access.tenant.id), eq(staff.isActive, true)))
   revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)
+  revalidatePath(`/${input.locale === 'ar' ? 'en' : 'ar'}/tenants/${input.slug}/dashboard`)
   return { ok: true as const }
 }
 
@@ -71,9 +84,30 @@ export async function createStaff(formData: FormData) {
   const access = await requireTenantAccess(await headers(), input.slug, 'manager')
   const created = await db.transaction(async (tx) => {
     const [person] = await tx.insert(staff).values({ tenantId: access.tenant.id, email: input.email || null, phoneE164: input.phone || null }).returning({ id: staff.id })
-    await tx.insert(staffTranslations).values({ tenantId: access.tenant.id, staffId: person.id, locale: input.locale, name: input.name })
+    await tx.insert(staffTranslations).values(
+      (['ar', 'en'] as const).map((loc) => ({
+        tenantId: access.tenant.id,
+        staffId: person.id,
+        locale: loc,
+        name: input.name,
+      }))
+    )
+    const activeServices = await tx
+      .select({ id: services.id })
+      .from(services)
+      .where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true)))
+    if (activeServices.length > 0) {
+      await tx.insert(staffServices).values(
+        activeServices.map((srv) => ({
+          tenantId: access.tenant.id,
+          staffId: person.id,
+          serviceId: srv.id,
+        }))
+      )
+    }
     return person
   })
   revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)
+  revalidatePath(`/${input.locale === 'ar' ? 'en' : 'ar'}/tenants/${input.slug}/dashboard`)
   return { ok: true as const, id: created.id }
 }

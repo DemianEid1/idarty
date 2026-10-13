@@ -15,7 +15,15 @@ import { resolve } from 'node:path'
 
 const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8').replace(/\r\n/g, '\n')
 
+// The dashboard is split across three files now, and each assertion below is
+// pointed at the file that OWNS the concern:
+//   - page.tsx             -> the active tab's content
+//   - dashboard/layout.tsx -> the persistent shell (sidebar + header)
+//   - lib/dashboard-nav.tsx-> the shared nav array + copy
 const dashboard = read('../app/[locale]/tenants/[slug]/dashboard/page.tsx')
+const shell = read('../app/[locale]/tenants/[slug]/dashboard/layout.tsx')
+const navModule = read('../lib/dashboard-nav.tsx')
+const sidebarLink = read('../components/dashboard-sidebar-link.tsx')
 const mobileNav = read('../components/dashboard-mobile-nav.tsx')
 const publicWebsiteLink = read('../components/public-website-link.tsx')
 const routes = read('../lib/routes.ts')
@@ -25,46 +33,49 @@ describe('sidebar navigation order', () => {
 
   it('declares the nav items in the required order', () => {
     // Isolate the `const nav = [...]` block.
-    const start = dashboard.indexOf('const nav = [')
-    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
-    const block = dashboard.slice(start, end)
+    const start = navModule.indexOf('export function buildDashboardNav')
+    const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
+    const block = navModule.slice(start, end)
     const ids = [...block.matchAll(/id: '([a-z]+)'/g)].map((m) => m[1])
     expect(ids).toEqual(expectedOrder)
   })
 
   it('does not duplicate any nav entry', () => {
-    const start = dashboard.indexOf('const nav = [')
-    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
-    const block = dashboard.slice(start, end)
+    const start = navModule.indexOf('export function buildDashboardNav')
+    const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
+    const block = navModule.slice(start, end)
     const ids = [...block.matchAll(/id: '([a-z]+)'/g)].map((m) => m[1])
     expect(new Set(ids).size).toBe(ids.length)
   })
 
   it('keeps every nav destination as a ?tab= query link', () => {
     for (const id of expectedOrder) {
-      expect(dashboard).toContain(`href={\`?tab=\${n.id}\`}`)
+      // The href is built by the sidebar link component.
+      expect(sidebarLink).toContain('href={`?tab=${item.id}`}')
     }
   })
 
   it('renders the SAME nav array in both the sidebar and the mobile drawer', () => {
-    // One source of truth: both render from `nav`.
-    expect(dashboard).toContain('{nav.map(')
-    expect(dashboard).toContain('items={nav}')
+    // One source of truth: the shell renders the sidebar from `nav` and
+    // passes the SAME array to the mobile drawer.
+    expect(shell).toContain('{nav.map((item) => (')
+    expect(shell).toContain('items={nav}')
+    expect(navModule).toContain('export function buildDashboardNav')
   })
 
   it('preserves active-item highlighting in the sidebar', () => {
-    expect(dashboard).toContain("tab === n.id ? 'bg-brand-teal font-semibold text-white shadow-sm'")
+    expect(sidebarLink).toContain("isActive ? 'bg-brand-teal font-semibold text-white shadow-sm'")
   })
 
   it('preserves the platform-admin entry and its destination', () => {
-    expect(dashboard).toContain('isPlatformAdmin')
-    expect(dashboard).toContain('`/${locale}/admin`')
+    expect(shell).toContain('isPlatformAdmin')
+    expect(shell).toContain('`/${typedLocale}/admin`')
   })
 
   it('uses the Store icon ONLY for the Website nav item', () => {
-    const start = dashboard.indexOf('const nav = [')
-    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
-    const block = dashboard.slice(start, end)
+    const start = navModule.indexOf('export function buildDashboardNav')
+    const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
+    const block = navModule.slice(start, end)
     // Exactly one Store icon, on the website item.
     const storeIcons = block.match(/<Store\b/g) ?? []
     expect(storeIcons.length).toBe(1)
@@ -75,9 +86,9 @@ describe('sidebar navigation order', () => {
   })
 
   it('keeps the same icon size and aria-hidden on every nav icon', () => {
-    const start = dashboard.indexOf('const nav = [')
-    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
-    const block = dashboard.slice(start, end)
+    const start = navModule.indexOf('export function buildDashboardNav')
+    const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
+    const block = navModule.slice(start, end)
     const icons = block.match(/aria-hidden="true" className="h-4 w-4"/g) ?? []
     expect(icons.length).toBe(6)
   })
@@ -85,16 +96,18 @@ describe('sidebar navigation order', () => {
 
 describe('sidebar spacing and active state', () => {
   it('uses tight item spacing without collapsing the list', () => {
-    expect(dashboard).toContain('className="mt-7 space-y-0.5 text-sm"')
+    // Same tight item spacing; the nav is also the sidebar's scroll region.
+    expect(shell).toContain('space-y-0.5 overflow-y-auto')
+    expect(shell).toContain('min-h-0 flex-1')
   })
 
   it('applies the teal active treatment only to the selected item', () => {
     // Single conditional: active gets teal, inactive gets a hover only.
-    expect(dashboard).toContain("tab === n.id ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'")
+    expect(sidebarLink).toContain("isActive ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'")
   })
 
   it('does not reintroduce the Workspace identity card', () => {
-    expect(dashboard).not.toContain('mt-10 rounded-2xl bg-surface p-4')
+    expect(shell).not.toContain('mt-10 rounded-2xl bg-surface p-4')
   })
 })
 
@@ -308,9 +321,9 @@ describe('quick actions icons', () => {
 
 describe('Services icon', () => {
   const navBlock = () => {
-    const start = dashboard.indexOf('const nav = [')
-    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
-    return dashboard.slice(start, end)
+    const start = navModule.indexOf('export function buildDashboardNav')
+    const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
+    return navModule.slice(start, end)
   }
 
   it('maps Layers to Services only', () => {
@@ -335,9 +348,9 @@ describe('Services icon', () => {
 
 describe('Overview icon', () => {
   const navBlock = () => {
-    const start = dashboard.indexOf('const nav = [')
-    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
-    return dashboard.slice(start, end)
+    const start = navModule.indexOf('export function buildDashboardNav')
+    const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
+    return navModule.slice(start, end)
   }
 
   it('maps LayoutDashboard to Overview only', () => {
@@ -365,9 +378,9 @@ describe('Overview icon', () => {
 
 describe('Team & Schedule icon', () => {
   const navBlock = () => {
-    const start = dashboard.indexOf('const nav = [')
-    const end = dashboard.indexOf(']', dashboard.indexOf("id: 'settings'"))
-    return dashboard.slice(start, end)
+    const start = navModule.indexOf('export function buildDashboardNav')
+    const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
+    return navModule.slice(start, end)
   }
 
   it('maps CalendarDays to Team & Schedule only', () => {
@@ -391,33 +404,36 @@ describe('Team & Schedule icon', () => {
 
 describe('tenant display name', () => {
   it('derives the heading from the tenant translation, not a hardcoded label', () => {
-    expect(dashboard).toContain('const tenantDisplayName = tenantTranslation?.name?.trim() || access.tenant.slug')
+    // Resolved by a shared helper so the shell and the page cannot diverge.
+    expect(shell).toContain('resolveTenantDisplayName(tenantTranslation, access.tenant.slug)')
+    expect(read('../lib/tenant-display-name.ts')).toContain('translation?.name?.trim() || slug')
   })
 
   it('prefers the display name over the slug', () => {
     // translation first, slug only as fallback
-    const idx = dashboard.indexOf('const tenantDisplayName')
-    const line = dashboard.slice(idx, dashboard.indexOf('\n', idx))
-    expect(line.indexOf('tenantTranslation')).toBeLessThan(line.indexOf('access.tenant.slug'))
+    const helper = read('../lib/tenant-display-name.ts')
+    const ret = helper.slice(helper.indexOf('return '))
+    const line = ret.slice(0, ret.indexOf('\n'))
+    expect(line.indexOf('name')).toBeLessThan(line.indexOf('slug'))
   })
 
   it('uses the display name for the page heading', () => {
     // There are two <h1>s: the suspended-account screen and the dashboard
     // heading. Target the dashboard one (the only one rendering the name).
-    expect(dashboard).toContain('>{tenantDisplayName}</h1>')
+    expect(shell).toContain('>{tenantDisplayName}</h1>')
   })
 
   it('no longer heads the page with the generic workspace title', () => {
-    const h1Idx = dashboard.indexOf('>{tenantDisplayName}</h1>')
-    const h1Start = dashboard.lastIndexOf('<h1', h1Idx)
-    const h1 = dashboard.slice(h1Start, dashboard.indexOf('</h1>', h1Idx))
+    const h1Idx = shell.indexOf('>{tenantDisplayName}</h1>')
+    const h1Start = shell.lastIndexOf('<h1', h1Idx)
+    const h1 = shell.slice(h1Start, shell.indexOf('</h1>', h1Idx))
     expect(h1).not.toContain('{t.title}')
   })
 
   it('keeps the heading safe for long names (wrapping, not overflow)', () => {
-    const h1Idx = dashboard.indexOf('>{tenantDisplayName}</h1>')
-    const h1Start = dashboard.lastIndexOf('<h1', h1Idx)
-    const h1 = dashboard.slice(h1Start, dashboard.indexOf('>', h1Start))
+    const h1Idx = shell.indexOf('>{tenantDisplayName}</h1>')
+    const h1Start = shell.lastIndexOf('<h1', h1Idx)
+    const h1 = shell.slice(h1Start, shell.indexOf('>', h1Start))
     expect(h1).toContain('break-words')
   })
 
@@ -425,8 +441,8 @@ describe('tenant display name', () => {
     // The sidebar workspace identity card was removed: it duplicated the
     // dashboard <h1> and was not a navigation target. The name is still shown
     // in the page heading, and settings stay reachable via the Settings tab.
-    expect(dashboard).not.toContain('{tenantDisplayName}</p>')
-    expect(dashboard).not.toContain('mt-10 rounded-2xl bg-surface p-4')
+    expect(shell).not.toContain('{tenantDisplayName}</p>')
+    expect(shell).not.toContain('mt-10 rounded-2xl bg-surface p-4')
   })
 })
 
@@ -443,8 +459,28 @@ describe('website editor spacing', () => {
 })
 
 describe('responsive navigation contract', () => {
-  it('the desktop sidebar is hidden below lg', () => {
-    expect(dashboard).toContain('hidden w-64 border-e border-border bg-paper p-5 lg:block')
+  it('the desktop sidebar is hidden below lg and pinned to the viewport at lg', () => {
+    // Hidden below lg (the mobile drawer takes over) and, at lg, a sticky
+    // full-height flex column so it stays put while the content scrolls.
+    // It now lives in the persistent layout, so it survives tab navigation.
+    expect(shell).toContain(
+      'hidden w-64 shrink-0 border-e border-border bg-paper lg:sticky lg:top-0 lg:h-screen lg:flex lg:flex-col'
+    )
+    expect(shell).toContain('lg:h-screen')
+    expect(shell).toContain('lg:sticky lg:top-0')
+  })
+
+  it('the sidebar nav is the only scrolling region; brand and admin link stay fixed', () => {
+    // The nav absorbs overflow...
+    expect(shell).toContain('min-h-0 flex-1 space-y-0.5 overflow-y-auto px-5 pb-5 text-sm')
+    // ...while the logo and the admin link are shrink-0 so they are never
+    // scrolled out of reach.
+    const aside = shell.slice(
+      shell.indexOf('<aside'),
+      shell.indexOf('</aside>')
+    )
+    expect(aside).toContain('<div className="shrink-0 p-5">')
+    expect(aside).toContain('className="shrink-0 border-t border-border p-5"')
   })
 
   it('the mobile trigger is only shown below lg', () => {
@@ -496,12 +532,14 @@ describe('responsive navigation contract', () => {
   })
 
   it('closes the drawer after navigating', () => {
-    const navLink = mobileNav.slice(mobileNav.indexOf('href={`?tab='))
-    expect(navLink.slice(0, 200)).toContain('onClick={close}')
+    // The item moved into DrawerNavLink, which calls back to close the drawer.
+    expect(mobileNav).toContain('onNavigate={close}')
+    const drawerLink = read('../components/drawer-nav-link.tsx')
+    expect(drawerLink).toContain('onNavigate()')
   })
 
   it('marks the active item for assistive tech', () => {
-    expect(mobileNav).toContain("aria-current={isActive ? 'page' : undefined}")
+    expect(read('../components/drawer-nav-link.tsx')).toContain("aria-current={isActive ? 'page' : undefined}")
   })
 
   it('reuses the passed-in nav items instead of defining its own', () => {

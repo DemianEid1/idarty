@@ -18,6 +18,21 @@ if (testConfig) console.log(`Migration test database host: ${testConfig.host}`)
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'db', 'migrations')
 
+/**
+ * Hash a migration's SQL for the applied-migration checksum.
+ *
+ * Line endings are normalised to LF before hashing. With `core.autocrlf=true`
+ * (the default on Windows) git rewrites checked-out files to CRLF while the
+ * repository — and therefore the checksum recorded when the migration was
+ * applied — stores LF. Hashing the raw bytes would then report an
+ * already-applied migration as "modified after being applied" and block every
+ * subsequent migration. A change in line endings is not a change in SQL, so it
+ * must not invalidate the checksum; a change in content still does.
+ */
+function migrationChecksum(sql: string) {
+  return createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex')
+}
+
 async function main() {
   const client = new Client({ connectionString })
   await client.connect()
@@ -39,7 +54,7 @@ async function main() {
 
     for (const file of files) {
       const sql = await readFile(path.join(MIGRATIONS_DIR, file), 'utf8')
-      const checksum = createHash('sha256').update(sql).digest('hex')
+      const checksum = migrationChecksum(sql)
       const previous = applied.get(file)
       if (previous) {
         if (previous !== checksum) {

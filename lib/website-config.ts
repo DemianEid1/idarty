@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isValidHeroImageDataUrl } from '@/lib/image-validation'
 
 // ---------------------------------------------------------------------------
 // Website Configuration Validation
@@ -6,6 +7,35 @@ import { z } from 'zod'
 // ---------------------------------------------------------------------------
 
 const localeSchema = z.enum(['ar', 'en'])
+
+/**
+ * A focal point: percentages on each axis, bounded to 0–100.
+ * Absent on every existing stored configuration, in which case the renderer
+ * resolves the centre — the crop position that was already in use.
+ */
+export const focalPointSchema = z.object({
+  x: z.number().min(0).max(100),
+  y: z.number().min(0).max(100),
+})
+
+/** Hero image opacity as a 0–1 fraction. Default 1 (fully opaque). */
+export const HERO_IMAGE_OPACITY_DEFAULT = 1
+export const heroImageOpacitySchema = z.number().min(0).max(1)
+
+/**
+ * A crop rectangle in source-image space (all values 0..1).
+ *
+ * `width`/`height` are bounded away from 0 so a degenerate rectangle can never
+ * be persisted; `x`/`y` are bounded to 0..1 and are additionally clamped to
+ * `1 - width` / `1 - height` by `resolveCrop` at render time, so a stored rect
+ * can never fall outside the image.
+ */
+export const imageCropSchema = z.object({
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(0.05).max(1),
+  height: z.number().min(0.05).max(1),
+})
 
 export const websiteSectionType = z.enum([
   'hero',
@@ -111,6 +141,32 @@ export const websiteThemeOverride = z
     // user-controlled website color.
     surfaceColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     logo: z.string().optional(),
+    // Optional Hero background image (base64 data URL). When present, the hero
+    // section renders it as a background image with text overlaid on top.
+    // When absent or empty, the hero renders its default text-only layout.
+    // Draft-only until Publish copies the full config to the published column.
+    //
+    // Bounded server-side: the value must be a JPEG/PNG/WebP data URL whose
+    // decoded size is within MAX_HERO_IMAGE_SIZE. Enforced here (not only in the
+    // upload UI) so an oversized or mislabelled payload submitted directly to
+    // saveDraft/publishChanges is rejected outright.
+    heroImage: z
+      .string()
+      .refine(isValidHeroImageDataUrl, {
+        message: 'Hero image must be a JPEG, PNG, or WebP data URL within the 2MB limit.',
+      })
+      .optional(),
+    // Where the hero image stays visible when it is cropped to fill the hero
+    // band (CSS `background-position`). Absent => centre, the previous
+    // hardcoded behaviour, so existing configurations are unaffected.
+    heroImageFocalPoint: focalPointSchema.optional(),
+    // The crop the tenant framed in the cropper, in source-image space.
+    // Absent => the whole image is shown (`object-fit: cover`), which is exactly
+    // how every image uploaded before this feature already renders.
+    heroImageCrop: imageCropSchema.optional(),
+    // Opacity of the hero image LAYER only (0–1). The text, buttons and
+    // overlay rendered above it are never affected. Absent => 1 (fully opaque).
+    heroImageOpacity: heroImageOpacitySchema.optional(),
     fontPreset: z.enum(['modern', 'classic', 'bold', 'elegant']).optional(),
     buttonStyle: z.enum(['rounded', 'sharp', 'pill']).optional(),
     borderRadius: z.enum(['none', 'sm', 'md', 'lg', 'full']).optional(),

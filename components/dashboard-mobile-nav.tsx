@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Menu, X } from 'lucide-react'
+import { DrawerNavLink } from '@/components/drawer-nav-link'
 
 // ---------------------------------------------------------------------------
 // Dashboard mobile navigation.
@@ -27,13 +28,11 @@ export interface DashboardNavItem {
 export function DashboardMobileNav({
   locale,
   items,
-  activeTab,
   adminHref,
   adminLabel,
 }: {
   locale: 'ar' | 'en'
   items: DashboardNavItem[]
-  activeTab: string
   adminHref?: string
   adminLabel?: string
 }) {
@@ -141,25 +140,9 @@ export function DashboardMobileNav({
             </div>
 
             <nav className="flex-1 space-y-1 overflow-y-auto p-3 text-sm">
-              {items.map((item) => {
-                const isActive = activeTab === item.id
-                return (
-                  <a
-                    key={item.id}
-                    href={`?tab=${item.id}`}
-                    onClick={close}
-                    aria-current={isActive ? 'page' : undefined}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-3 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 ${
-                      isActive
-                        ? 'bg-brand-teal font-semibold text-white shadow-sm'
-                        : 'text-[#647087] hover:bg-surface'
-                    }`}
-                  >
-                    {item.icon}
-                    {item.label}
-                  </a>
-                )
-              })}
+              {items.map((item) => (
+                <DrawerNavLink key={item.id} item={item} onNavigate={close} />
+              ))}
 
               {adminHref && adminLabel && (
                 <div className="mt-4 border-t border-border pt-4">

@@ -147,6 +147,22 @@ export const services = pgTable('services', {
   isActive: boolean('is_active').notNull().default(true),
   isSample: boolean('is_sample').notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
+  image: text('image'),
+  // Focal point for the optional service image, as percentages. NULL means the
+  // centre — the crop position already in use — so existing rows need no backfill.
+  //
+  // LEGACY: superseded by the crop rectangle below. Retained (and still
+  // populated when a crop is confirmed) so any row or code path that reads the
+  // focal point keeps working. Not exposed in the UI any more.
+  imageFocalX: smallint('image_focal_x'),
+  imageFocalY: smallint('image_focal_y'),
+  // The crop the tenant framed in the cropper, as fractions of the source image
+  // (numeric(5,4) => 0.0000..1.0000). All NULL means "show the whole image",
+  // which is how every image uploaded before this feature renders.
+  imageCropX: numeric('image_crop_x', { precision: 5, scale: 4 }),
+  imageCropY: numeric('image_crop_y', { precision: 5, scale: 4 }),
+  imageCropWidth: numeric('image_crop_width', { precision: 5, scale: 4 }),
+  imageCropHeight: numeric('image_crop_height', { precision: 5, scale: 4 }),
   createdAt: tsz('created_at').notNull().defaultNow(),
   updatedAt: tsz('updated_at').notNull().defaultNow(),
   deletedAt: tsz('deleted_at'),

@@ -1,7 +1,7 @@
 'use server'
 
 import { headers } from 'next/headers'
-import { and, eq, gte, isNull, lte, lt, not, or } from 'drizzle-orm'
+import { aliasedTable, and, eq, gt, gte, isNull, lte, lt, not, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
@@ -43,9 +43,29 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
   const service = await db.query.services.findFirst({ where: and(eq(services.id, data.serviceId), eq(services.tenantId, tenant.id), eq(services.isActive, true)) })
   if (!service) return { ok: false as const, message: data.locale === 'ar' ? 'الخدمة غير موجودة.' : 'Service not found.' }
 
-  const availableStaff = await db.select({ id: staff.id }).from(staff).innerJoin(staffServices, eq(staffServices.staffId, staff.id)).where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true), eq(staffServices.serviceId, service.id))).limit(1)
-  const person = availableStaff[0]
-  if (!person) return { ok: false as const, message: data.locale === 'ar' ? 'لا يوجد فريق متاح لهذه الخدمة.' : 'No staff available for this service.' }
+  let availableStaff = await db
+    .select({ id: staff.id })
+    .from(staff)
+    .innerJoin(staffServices, eq(staffServices.staffId, staff.id))
+    .where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true), eq(staffServices.serviceId, service.id)))
+
+  if (availableStaff.length === 0) {
+    availableStaff = await db
+      .select({ id: staff.id })
+      .from(staff)
+      .where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true)))
+      .orderBy(staff.sortOrder)
+  }
+
+  let defaultStaffMember = availableStaff[0]
+  if (!defaultStaffMember) {
+    const [createdStaff] = await db
+      .insert(staff)
+      .values({ tenantId: tenant.id, sortOrder: 0 })
+      .returning({ id: staff.id })
+    defaultStaffMember = createdStaff
+    availableStaff = [createdStaff]
+  }
 
   const start = new Date(data.startsAt)
   if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
@@ -79,8 +99,31 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
       const blockStart = new Date(start.getTime() - service.bufferBeforeMin * 60_000)
       const blockEnd = new Date(end.getTime() + service.bufferAfterMin * 60_000)
 
+      let assignedStaff = defaultStaffMember
+      for (const candidate of availableStaff) {
+        const isBusy = await tx
+          .select({ id: bookingItems.id })
+          .from(bookingItems)
+          .innerJoin(bookings, eq(bookings.id, bookingItems.bookingId))
+          .where(
+            and(
+              eq(bookingItems.tenantId, tenant.id),
+              eq(bookingItems.staffId, candidate.id),
+              not(eq(bookings.status, 'cancelled')),
+              lt(bookingItems.blockStartsAt, blockEnd),
+              gt(bookingItems.blockEndsAt, blockStart)
+            )
+          )
+          .limit(1)
+
+        if (isBusy.length === 0) {
+          assignedStaff = candidate
+          break
+        }
+      }
+
       const booking = await tx.insert(bookings).values({ tenantId: tenant.id, customerId, source: 'online', locale: data.locale, idempotencyKey, startsAt: start, endsAt: end }).returning({ id: bookings.id })
-      await tx.insert(bookingItems).values({ tenantId: tenant.id, bookingId: booking[0].id, serviceId: service.id, staffId: person.id, startsAt: start, endsAt: end, blockStartsAt: blockStart, blockEndsAt: blockEnd, priceAmount: service.priceAmount })
+      await tx.insert(bookingItems).values({ tenantId: tenant.id, bookingId: booking[0].id, serviceId: service.id, staffId: assignedStaff.id, startsAt: start, endsAt: end, blockStartsAt: blockStart, blockEndsAt: blockEnd, priceAmount: service.priceAmount })
       return booking[0]
     })
   } catch (error: any) {
@@ -132,18 +175,6 @@ export async function getAvailableSlots(slug: string, date: string, serviceId?: 
   
   if (!service) return []
 
-  const staffMembers = await db.select({ id: staff.id }).from(staff).innerJoin(staffServices, eq(staffServices.staffId, staff.id)).where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true), eq(staffServices.serviceId, service.id))).limit(1)
-  const person = staffMembers[0]
-  if (!person) return []
-
-  const hours = await db.query.workingHours.findMany({ where: and(eq(workingHours.tenantId, tenant.id), eq(workingHours.weekday, day), or(isNull(workingHours.staffId), eq(workingHours.staffId, person.id))) })
-  if (hours.length === 0) return []
-  const overrides = await db.query.dateOverrides.findMany({ where: and(eq(dateOverrides.tenantId, tenant.id), or(isNull(dateOverrides.staffId), eq(dateOverrides.staffId, person.id)), lte(dateOverrides.startDate, date), gte(dateOverrides.endDate, date)) })
-  if (overrides.some((override) => override.kind === 'closed')) return []
-  const effectiveHours = overrides.some((override) => override.kind === 'custom_hours') ? overrides.filter((override) => override.kind === 'custom_hours').map((override) => ({ startTime: override.startTime!, endTime: override.endTime! })) : hours
-  const busy = await db.select({ startsAt: bookingItems.blockStartsAt, endsAt: bookingItems.blockEndsAt }).from(bookingItems).innerJoin(bookings, eq(bookings.id, bookingItems.bookingId)).where(and(eq(bookingItems.tenantId, tenant.id), eq(bookingItems.staffId, person.id), not(eq(bookings.status, 'cancelled')), gte(bookingItems.startsAt, new Date(new Date(`${date}T00:00:00Z`).getTime() - 24 * 3600000)), lte(bookingItems.startsAt, new Date(new Date(`${date}T23:59:59Z`).getTime() + 24 * 3600000))))
-
-  const slots: string[] = []
   const formatter = new Intl.DateTimeFormat('en-US', { timeZone: tenant.timezone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   const startUtc = new Date(`${date}T00:00:00Z`).getTime() - 14 * 3600000
   const endUtc = new Date(`${date}T23:59:59Z`).getTime() + 14 * 3600000
@@ -152,31 +183,58 @@ export async function getAvailableSlots(slug: string, date: string, serviceId?: 
   const maxNoticeMs = 60 * 24 * 3600_000 // 60 days
   const nowMs = Date.now()
 
+  const availableSlotSet = new Set<string>()
+
+  // Always use workspace-level working hours (staffId IS NULL) regardless of staff assignments.
+  // This ensures all services show slots based on the general workspace schedule.
+  const hours = await db.query.workingHours.findMany({
+    where: and(
+      eq(workingHours.tenantId, tenant.id),
+      eq(workingHours.weekday, day),
+      isNull(workingHours.staffId)
+    ),
+  })
+
+  if (hours.length === 0) return []
+
+  const overrides = await db.query.dateOverrides.findMany({
+    where: and(
+      eq(dateOverrides.tenantId, tenant.id),
+      isNull(dateOverrides.staffId),
+      lte(dateOverrides.startDate, date),
+      gte(dateOverrides.endDate, date)
+    ),
+  })
+
+  if (overrides.some((override) => override.kind === 'closed')) return []
+
+  const effectiveHours = overrides.some((override) => override.kind === 'custom_hours')
+    ? overrides.filter((override) => override.kind === 'custom_hours').map((override) => ({ startTime: override.startTime!, endTime: override.endTime! }))
+    : hours
+
   for (let time = startUtc; time <= endUtc; time += 30 * 60000) {
     if (time < nowMs + minNoticeMs || time > nowMs + maxNoticeMs) continue
-
     const d = new Date(time)
     const parts = formatter.formatToParts(d)
-    const p = Object.fromEntries(parts.map(x => [x.type, x.value]))
+    const p = Object.fromEntries(parts.map((x) => [x.type, x.value]))
     const localDateStr = `${p.year}-${p.month}-${p.day}`
     if (localDateStr === date) {
       const minutes = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10)
       for (const range of effectiveHours) {
         const [sh, sm] = range.startTime.split(':').map(Number)
         const [eh, em] = range.endTime.split(':').map(Number)
-        // Check if the service fits within the working hours, INCLUDING buffers
-        if (minutes - service.bufferBeforeMin >= sh * 60 + sm && minutes + service.durationMin + service.bufferAfterMin <= eh * 60 + em) {
-          const blockStart = new Date(time - service.bufferBeforeMin * 60_000)
-          const blockEnd = new Date(time + (service.durationMin + service.bufferAfterMin) * 60_000)
-          if (!busy.some((item) => blockStart < item.endsAt && blockEnd > item.startsAt)) {
-            slots.push(d.toISOString())
-            break
-          }
+        if (
+          minutes - service.bufferBeforeMin >= sh * 60 + sm &&
+          minutes + service.durationMin + service.bufferAfterMin <= eh * 60 + em
+        ) {
+          availableSlotSet.add(d.toISOString())
+          break
         }
       }
     }
   }
-  return slots
+
+  return Array.from(availableSlotSet).sort()
 }
 
 function createPublicServicesCache(slug: string, locale: 'ar' | 'en') {
@@ -184,7 +242,42 @@ function createPublicServicesCache(slug: string, locale: 'ar' | 'en') {
     async () => {
       const tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) })
       if (!tenant) return []
-      return db.select({ id: services.id, name: serviceTranslations.name, durationMin: services.durationMin, priceAmount: services.priceAmount }).from(services).innerJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale))).where(and(eq(services.tenantId, tenant.id), eq(services.isActive, true), eq(services.isSample, false))).limit(20)
+      const fallbackLocale = locale === 'ar' ? 'en' : 'ar'
+      const fallbackTranslations = aliasedTable(serviceTranslations, 'fallback_book_service_translations')
+      const rows = await db
+        .select({
+          id: services.id,
+          name: serviceTranslations.name,
+          fallbackName: fallbackTranslations.name,
+          durationMin: services.durationMin,
+          priceAmount: services.priceAmount,
+        })
+        .from(services)
+        .leftJoin(
+          serviceTranslations,
+          and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale))
+        )
+        .leftJoin(
+          fallbackTranslations,
+          and(eq(fallbackTranslations.serviceId, services.id), eq(fallbackTranslations.locale, fallbackLocale))
+        )
+        .where(
+          and(
+            eq(services.tenantId, tenant.id),
+            eq(services.isActive, true),
+            eq(services.isSample, false),
+            isNull(services.deletedAt)
+          )
+        )
+        .orderBy(services.sortOrder)
+        .limit(20)
+
+      return rows.map((r) => ({
+        id: r.id,
+        name: r.name || r.fallbackName || (locale === 'ar' ? 'خدمة' : 'Service'),
+        durationMin: r.durationMin,
+        priceAmount: r.priceAmount,
+      }))
     },
     ['public-services', slug, locale],
     { revalidate: 60, tags: [`tenant-services-${slug}-${locale}`] }

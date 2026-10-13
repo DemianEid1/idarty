@@ -13,6 +13,9 @@ import { LocaleSwitcher, LocaleSwitchLink } from '@/components/locale-switcher'
 
 const editorSource = readFileSync(resolve(__dirname, '../components/website-editor.tsx'), 'utf8')
 const switcherSource = readFileSync(resolve(__dirname, '../components/locale-switcher.tsx'), 'utf8')
+// The Workspace header (and its language switcher) is part of the persistent
+// dashboard shell, which lives in the dashboard layout.
+const shell = readFileSync(resolve(__dirname, '../app/[locale]/tenants/[slug]/dashboard/layout.tsx'), 'utf8')
 
 describe('Website Builder toolbar language switcher removal', () => {
   it('the editor no longer imports the interactive LocaleSwitcher', () => {
@@ -51,8 +54,9 @@ describe('Website Builder toolbar language switcher removal', () => {
       resolve(__dirname, '../app/[locale]/tenants/[slug]/dashboard/page.tsx'),
       'utf8'
     )
-    expect(dashboard).toContain('LocaleSwitcher')
-    expect(dashboard).toContain('<LocaleSwitcher currentLocale={locale} />')
+    // The switcher moved to the persistent shell with the header.
+    expect(shell).toContain('LocaleSwitcher')
+    expect(shell).toContain('<LocaleSwitcher currentLocale={typedLocale} />')
   })
 
   it('the public tenant website still passes its own switcher', () => {

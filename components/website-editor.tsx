@@ -8,22 +8,36 @@ import {
   isRenderableSectionType,
   SECTION_CONTENT_FIELDS,
   createDefaultWebsiteConfig,
-  addSection,
   removeSection,
   moveSection as moveSectionInConfig,
-  hasSectionType,
-  ADDABLE_SECTION_TYPES,
   type WebsiteConfig,
 } from '@/lib/website-config'
 import { useToast } from '@/components/toast'
 import { THEME_PRESETS, applyPreset, detectPreset } from '@/lib/theme-presets'
+import { MAX_HERO_IMAGE_SIZE, SUPPORTED_IMAGE_MIME_TYPES } from '@/lib/image-validation'
+import { ImageCropper } from '@/components/image-cropper'
+import { ServicesSection } from '@/components/services-section'
+import { CROP_ASPECTS, resolveCrop, type ImageCrop } from '@/lib/image-crop'
+import { focalPointToCss } from '@/lib/image-focal-point'
 import type { Locale } from '@/lib/i18n'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type Service = { id: string; name: string | null; durationMin: number; priceAmount: string }
+type Service = {
+  id: string
+  name: string | null
+  durationMin: number
+  priceAmount: string
+  /**
+   * Service images are managed in the Website Builder's Services area. The
+   * editor itself does not render them, but the prop is typed here so the shape
+   * the dashboard passes is explicit and a missing field is a compile error.
+   */
+  image?: string | null
+  imageCrop?: ImageCrop | null
+}
 
 type Props = {
   locale: Locale
@@ -150,6 +164,14 @@ export function WebsiteEditor({
   // Determine if there are saved unpublished changes
   const hasUnpublishedChanges = !configsEqual(config, publishedConfig)
 
+  // Hero image opacity as a percentage for the control. Absent => 100%.
+  const heroOpacity =
+    typeof config.theme.heroImageOpacity === 'number' ? config.theme.heroImageOpacity : 1
+
+  // Cropper visibility. Only one cropper can be open at a time.
+  const [showHeroCropper, setShowHeroCropper] = useState(false)
+  const hasHeroCrop = resolveCrop(config.theme.heroImageCrop) !== null
+
   // Track changes
   const markChanged = useCallback(() => {
     setHasUnsavedChanges(true)
@@ -166,6 +188,68 @@ export function WebsiteEditor({
       markChanged()
     },
     [markChanged]
+  )
+
+  // Hero crop — DRAFT only, exactly like the image itself. The cropper writes
+  // here on confirm; Cancel simply never calls it, so the previous crop (and the
+  // previous image) are untouched.
+  const setHeroCrop = useCallback(
+    (next: ImageCrop) => {
+      setConfig((prev) => ({
+        ...prev,
+        theme: { ...prev.theme, heroImageCrop: next },
+      }))
+      markChanged()
+    },
+    [markChanged]
+  )
+
+  // Hero image opacity (0–1). Applies to the image LAYER only.
+  const setHeroOpacity = useCallback(
+    (next: number) => {
+      setConfig((prev) => ({
+        ...prev,
+        theme: { ...prev.theme, heroImageOpacity: next },
+      }))
+      markChanged()
+    },
+    [markChanged]
+  )
+
+  // Hero image upload — reads the file as a data URL and updates the draft theme.
+  // The image is stored as a base64 data URL in the draft config. It is NOT
+  // published until the user explicitly clicks Publish.
+  //
+  // The size/type limits come from lib/image-validation.ts, the SAME module the
+  // server-side Zod schema uses, so the client check can never drift from what
+  // the server will accept.
+  const handleHeroImageChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      // Client-side validation: only the explicitly supported raster formats.
+      if (!(SUPPORTED_IMAGE_MIME_TYPES as readonly string[]).includes(file.type)) {
+        toast('error', rtl ? 'نوع الصورة غير مدعوم. يُسمح بـ JPEG و PNG و WebP فقط.' : 'Unsupported image type. Only JPEG, PNG, and WebP are allowed.')
+        e.target.value = ''
+        return
+      }
+      // Client-side size check, mirroring the server-side bound.
+      if (file.size > MAX_HERO_IMAGE_SIZE) {
+        toast('error', rtl ? 'حجم الصورة كبير جداً. الحد الأقصى 2 ميجابايت.' : 'Image is too large. Maximum size is 2MB.')
+        e.target.value = ''
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        if (typeof event.target?.result === 'string') {
+          updateTheme('heroImage', event.target.result)
+        }
+      }
+      reader.readAsDataURL(file)
+      // Reset the input so the same file can be selected again
+      e.target.value = ''
+    },
+    [rtl, toast, updateTheme]
   )
 
   // Preset selection — presentation-only, DRAFT only. Never publishes.
@@ -196,16 +280,6 @@ export function WebsiteEditor({
   const moveSection = useCallback(
     (sectionId: string, direction: 'up' | 'down') => {
       setConfig((prev) => moveSectionInConfig(prev, sectionId, direction))
-      markChanged()
-    },
-    [markChanged]
-  )
-
-  // Add a supported section. No-op for unsupported types or an existing type
-  // (the schema does not model duplicate section instances).
-  const handleAddSection = useCallback(
-    (type: string) => {
-      setConfig((prev) => addSection(prev, type))
       markChanged()
     },
     [markChanged]
@@ -353,6 +427,16 @@ export function WebsiteEditor({
   // in a persisted config but cannot be toggled or reordered to any effect, so
   // they are not shown as editable controls.
   const editableSections = config.sections.filter((s) => isRenderableSectionType(s.type))
+
+  // The `services` section gets its own Services area (see
+  // components/services-section.tsx), where its text sits with the service list
+  // and their images. Its text is therefore NOT repeated in Section Content.
+  //
+  // Section Management, by contrast, keeps listing EVERY renderable section —
+  // services included — because visibility and ordering are its job and always
+  // have been.
+  const servicesSection = editableSections.find((s) => s.type === 'services') ?? null
+  const contentSections = editableSections.filter((s) => s.type !== 'services')
 
   // Check if all renderable sections are hidden
   const allHidden = editableSections.length > 0 && editableSections.every((s) => !s.isVisible)
@@ -595,11 +679,129 @@ export function WebsiteEditor({
               </div>
             </div>
           </div>
+
+          {/* Hero image — optional background image for the hero section */}
+          <div>
+            <span className="mb-2 block text-xs font-semibold text-[#647087]">
+              {rtl ? 'صورة القسم الرئيسي' : 'Hero image'}
+            </span>
+            <p className="mb-3 text-[11px] text-ink-lighter">
+              {rtl
+                ? 'صورة خلفية اختيارية للقسم الرئيسي. تُعرض بنص فوقها. الحد الأقصى 2 ميجابايت.'
+                : 'Optional background image for the hero section. Text is overlaid on top. Max 2MB.'}
+            </p>
+            <div className="flex items-center gap-5">
+              {config.theme.heroImage ? (
+                <div className="h-20 w-36 shrink-0 overflow-hidden rounded-xl border border-[#e1e5ed] bg-surface">
+                  <img
+                    src={config.theme.heroImage}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    style={{ objectPosition: focalPointToCss(config.theme.heroImageFocalPoint) }}
+                  />
+                </div>
+              ) : (
+                <div className="flex h-20 w-36 shrink-0 items-center justify-center rounded-xl border border-dashed border-[#e1e5ed] bg-surface">
+                  <span className="text-[10px] text-ink-lighter">{rtl ? 'لا توجد صورة' : 'No image'}</span>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="cursor-pointer rounded-lg border border-[#e1e5ed] bg-paper px-3 py-1.5 text-xs font-semibold text-[#516078] transition hover:bg-surface">
+                  {config.theme.heroImage
+                    ? (rtl ? 'تغيير الصورة' : 'Change image')
+                    : (rtl ? 'رفع صورة' : 'Upload image')}
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    className="hidden"
+                    onChange={handleHeroImageChange}
+                  />
+                </label>
+                {config.theme.heroImage && (
+                  <button
+                    type="button"
+                    // Clear the focal point and opacity alongside the image, so
+                    // removing the image cannot leave stale crop/opacity state
+                    // to be applied to whatever is uploaded next.
+                    onClick={() => {
+                      setConfig((prev) => ({
+                        ...prev,
+                        theme: {
+                          ...prev.theme,
+                          heroImage: undefined,
+                          heroImageFocalPoint: undefined,
+                          heroImageCrop: undefined,
+                          heroImageOpacity: undefined,
+                        },
+                      }))
+                      markChanged()
+                    }}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    {rtl ? 'إزالة' : 'Remove'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Crop — opens the cropper at the hero band's aspect ratio. */}
+            {config.theme.heroImage && (
+              <>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowHeroCropper(true)}
+                    className="rounded-lg border border-[#e1e5ed] bg-paper px-3 py-1.5 text-xs font-semibold text-[#516078] transition hover:bg-surface"
+                  >
+                    {hasHeroCrop
+                      ? (rtl ? 'تعديل الاقتصاص' : 'Adjust crop')
+                      : (rtl ? 'اقتصاص الصورة' : 'Crop image')}
+                  </button>
+                  {hasHeroCrop && (
+                    <button
+                      type="button"
+                      onClick={() => updateTheme('heroImageCrop', '')}
+                      className="text-xs text-brand-teal hover:underline"
+                    >
+                      {rtl ? 'إلغاء الاقتصاص' : 'Remove crop'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-4 max-w-sm">
+                  <label className="block">
+                    <span className="flex items-center justify-between text-xs font-semibold text-[#647087]">
+                      <span>{rtl ? 'شفافية الصورة' : 'Image opacity'}</span>
+                      <span className="font-mono">{Math.round(heroOpacity * 100)}%</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(heroOpacity * 100)}
+                      onChange={(e) => setHeroOpacity(Number(e.target.value) / 100)}
+                      aria-label={rtl ? 'شفافية صورة القسم الرئيسي' : 'Hero image opacity'}
+                      className="mt-2 h-1.5 w-full cursor-pointer accent-[#0F766E]"
+                    />
+                  </label>
+                  <p className="mt-1 text-[11px] text-ink-lighter">
+                    {rtl
+                      ? 'تؤثر على الصورة فقط — يبقى النص والأزرار واضحة تماماً.'
+                      : 'Affects the image only — your text and buttons stay fully opaque.'}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Section Content — driven by SECTION_CONTENT_FIELDS so the editor and
-          renderer always agree on which fields are editable. */}
+          renderer always agree on which fields are editable.
+          The Services section's text is NOT here: it lives in the Services area
+          below, beside the service list it describes. Every other renderable
+          section is listed here exactly as before. */}
       <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
         <h2 className="text-lg font-semibold">{rtl ? 'محتوى الأقسام' : 'Section Content'}</h2>
         <p className="mt-1 text-sm text-ink-muted">
@@ -609,7 +811,7 @@ export function WebsiteEditor({
         </p>
 
         <div className="mt-6 space-y-8">
-          {editableSections
+          {contentSections
             .slice()
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((section) => {
@@ -733,7 +935,24 @@ export function WebsiteEditor({
         </div>
       </div>
 
-      {/* Section Management */}
+      {/* THE Services area — section text, the service list with prices, and
+          each service's image. Sits after Section Management, matching the
+          intended hierarchy: the generic section controls, then the section
+          that needs richer management. */}
+      {servicesSection && (
+        <ServicesSection
+          locale={locale}
+          slug={slug}
+          sectionId={servicesSection.id}
+          content={servicesSection.content ?? null}
+          services={services}
+          onUpdateContent={updateSectionContent}
+          onResetContent={resetSectionContent}
+        />
+      )}
+
+      {/* Section Management — restored to its original interface: every
+          renderable section, with visibility, ordering and remove. */}
       <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
         <h2 className="text-lg font-semibold">{rtl ? 'إدارة الأقسام' : 'Section Management'}</h2>
         <p className="mt-1 text-sm text-ink-muted">
@@ -817,31 +1036,24 @@ export function WebsiteEditor({
               )
             })}
         </div>
-
-        {/* Add a supported section. Only renderable types are offered, and a type
-            that is already present is disabled so duplicates cannot be created. */}
-        <div className="mt-6 border-t border-[#edf0f4] pt-5">
-          <p className="text-xs font-semibold text-[#647087]">{rtl ? 'إضافة قسم' : 'Add a section'}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {ADDABLE_SECTION_TYPES.map((type) => {
-              const already = hasSectionType(config, type)
-              const label = SECTION_LABELS[type] ?? { ar: type, en: type, description: { ar: '', en: '' } }
-              return (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => handleAddSection(type)}
-                  disabled={already}
-                  className="rounded-xl border border-[#e1e5ed] bg-paper px-4 py-2 text-sm font-semibold text-[#516078] transition hover:border-brand-teal hover:text-brand-teal disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#e1e5ed] disabled:hover:text-[#516078]"
-                  title={already ? (rtl ? 'هذا القسم مضاف بالفعل' : 'This section is already added') : undefined}
-                >
-                  + {label[locale]}
-                </button>
-              )
-            })}
-          </div>
-        </div>
       </div>
+
+      {/* Hero image cropper — modal, opened from the Hero image controls.
+          Cancel leaves the previous image AND crop untouched. */}
+      {showHeroCropper && config.theme.heroImage && (
+        <ImageCropper
+          locale={locale}
+          image={config.theme.heroImage}
+          aspect={CROP_ASPECTS.hero}
+          initialCrop={resolveCrop(config.theme.heroImageCrop)}
+          title={rtl ? 'اقتصاص صورة القسم الرئيسي' : 'Crop hero image'}
+          onCancel={() => setShowHeroCropper(false)}
+          onConfirm={(crop) => {
+            setHeroCrop(crop)
+            setShowHeroCropper(false)
+          }}
+        />
+      )}
 
       {/* Publish confirmation modal */}
       {showPublishConfirm && (
