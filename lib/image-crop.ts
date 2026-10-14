@@ -43,7 +43,7 @@ export interface ImageCrop {
 }
 
 /**
- * Target aspect ratios (width / height) for the two croppable image slots.
+ * Target aspect ratios (width / height) for the croppable image slots.
  *
  * - `hero`    — the wide, short hero band on desktop.
  * - `service` — the fixed image area reserved on every service card.

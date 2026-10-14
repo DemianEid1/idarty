@@ -112,7 +112,7 @@ describe('responsive: text wrapping safety', () => {
   })
 
   it('inline icons are shrink-0 so they cannot be squashed', () => {
-    const icons = render().filter((n) => n.className.includes('h-4 w-4'))
+    const icons = render().filter((n) => n.className.includes('h-4 w-4') || n.className.includes('h-5 w-5'))
     expect(icons.length).toBeGreaterThan(0)
     for (const icon of icons) expect(icon.className).toContain('shrink-0')
   })
@@ -120,7 +120,7 @@ describe('responsive: text wrapping safety', () => {
 
 describe('responsive: header fits narrow screens', () => {
   it('the header row can shrink and has a gap', () => {
-    const row = find(render(), (n) => n.type === 'div' && n.className.includes('max-w-6xl') && n.className.includes('justify-between'))!
+    const row = find(render(), (n) => n.type === 'div' && n.className.includes('max-w-7xl') && n.className.includes('justify-between'))!
     expect(row.className).toContain('gap-3')
   })
 
@@ -231,7 +231,7 @@ describe('responsive: header fits narrow screens', () => {
   })
 
   it('the header uses tighter horizontal padding on mobile', () => {
-    const row = find(render(), (n) => n.type === 'div' && n.className.includes('max-w-6xl') && n.className.includes('justify-between'))!
+    const row = find(render(), (n) => n.type === 'div' && n.className.includes('max-w-7xl') && n.className.includes('justify-between'))!
     expect(row.className).toContain('px-4')
     expect(row.className).toContain('sm:px-6')
   })
@@ -246,7 +246,7 @@ describe('responsive: header fits narrow screens', () => {
 describe('responsive: sections and cards', () => {
   it('section content uses tighter mobile padding and relaxes on desktop', () => {
     const containers = render().filter(
-      (n) => n.type === 'div' && n.className.includes('max-w-6xl') && n.className.includes('px-4')
+      (n) => n.type === 'div' && n.className.includes('max-w-7xl') && n.className.includes('px-4')
     )
     // hero container + services container
     expect(containers.length).toBeGreaterThanOrEqual(2)

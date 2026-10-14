@@ -206,7 +206,7 @@ export function TenantWebsite({
     <section
       key="hero"
       // FULL-BLEED: the section itself spans the viewport edge to edge. The
-      // readable content is constrained by the inner `max-w-6xl` wrapper below,
+      // readable content is constrained by the inner `max-w-7xl` wrapper below,
       // so text/CTA stay aligned with the rest of the site while the image
       // reaches both edges.
       //
@@ -261,59 +261,59 @@ export function TenantWebsite({
       )}
 
       {/* Content container — matches the site's normal readable width. */}
-      <div className="relative mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20 lg:py-24">
+      <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
         <div className="max-w-2xl">
           <p
-            className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold break-words"
+            className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-semibold break-words"
             style={
               heroImage
                 ? { color: '#fff', borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(0,0,0,0.25)' }
                 : { color: 'var(--site-primary)', borderColor: 'var(--site-primary)' }
             }
           >
-            <Sparkles className="h-4 w-4 shrink-0" />
+            <Sparkles className="h-5 w-5 shrink-0" />
             {businessTagline}
           </p>
           <h1
-            className="mt-4 text-4xl font-bold tracking-tight break-words sm:text-5xl lg:text-6xl"
+            className="mt-4 text-[2.5rem] font-bold tracking-tight break-words sm:text-[3.5rem] lg:text-[4.25rem]"
             style={heroImage ? { color: '#fff' } : undefined}
           >
             {businessName}
           </h1>
           <p
-            className="mt-5 max-w-xl text-base leading-7 break-words sm:text-lg sm:leading-8"
+            className="mt-5 max-w-xl text-lg leading-8 break-words sm:text-xl sm:leading-9"
             style={{ color: heroImage ? 'rgba(255,255,255,0.92)' : '#6f7b90' }}
           >
             {businessDescription}
           </p>
           <div
-            className="mt-7 flex flex-wrap gap-4 text-sm"
+            className="mt-7 flex flex-wrap gap-4 text-base"
             style={{ color: heroImage ? 'rgba(255,255,255,0.88)' : '#748096' }}
           >
             {businessAddress && (
               <span className="flex items-center gap-2 break-words">
-                <MapPin className="h-4 w-4 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+                <MapPin className="h-5 w-5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
                 {businessAddress}
               </span>
             )}
             <span className="flex items-center gap-2">
-              <Clock3 className="h-4 w-4 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+              <Clock3 className="h-5 w-5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
               {hoursLabel}
             </span>
             {businessPhone && (
               <span className="flex items-center gap-2 break-words">
-                <Phone className="h-4 w-4 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+                <Phone className="h-5 w-5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
                 {businessPhone}
               </span>
             )}
           </div>
           <Link
             href={`/${locale}/tenants/${slug}/book`}
-            className="mt-8 inline-flex max-w-full items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
+            className="mt-8 inline-flex max-w-full items-center gap-2 rounded-xl px-7 py-3.5 text-base font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
             style={{ backgroundColor: 'var(--site-primary)' }}
           >
             <span className="break-words">{ctaLabel}</span>
-            <ArrowRight className="h-4 w-4 shrink-0" />
+            <ArrowRight className="h-5 w-5 shrink-0" />
           </Link>
         </div>
       </div>
@@ -326,18 +326,18 @@ export function TenantWebsite({
       id="services"
       className="border-t border-[#eef0f4]"
     >
-      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20">
+      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24">
         {serviceRows.length > 0 ? (
           <>
             <div className="mb-10 text-center">
-              <h2 className="text-2xl font-bold tracking-tight break-words sm:text-3xl">
+              <h2 className="text-3xl font-bold tracking-tight break-words sm:text-4xl">
                 {servicesHeading}
               </h2>
-              <p className="mt-2 text-sm text-[#6f7b90] break-words">
+              <p className="mt-2 text-base text-[#6f7b90] break-words">
                 {servicesDescription}
               </p>
             </div>
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {serviceRows.map((item) => (
                 <div
                   key={item.id}
@@ -386,18 +386,18 @@ export function TenantWebsite({
 
                   <div className="flex min-w-0 flex-1 flex-col p-6">
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-base font-semibold break-words">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
-                      {item.description && <p className="mt-2 text-sm leading-6 text-[#6f7b90] break-words">{item.description}</p>}
+                      <h3 className="text-lg font-semibold break-words">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
+                      {item.description && <p className="mt-2 text-base leading-7 text-[#6f7b90] break-words">{item.description}</p>}
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eef0f4] pt-4">
                       <div className="min-w-0">
-                        <span className="text-lg font-bold" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
+                        <span className="text-xl font-bold" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
                         <span className="text-sm text-[#929bad]"> {tenant.currency}</span>
                         <p className="mt-0.5 text-xs text-[#929bad]">{durationLabel(item.durationMin)}</p>
                       </div>
                       <Link
                         href={`/${locale}/tenants/${slug}/book?service=${item.id}`}
-                        className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
                         style={{ backgroundColor: 'var(--site-primary)' }}
                       >
                         {rtl ? 'احجز' : 'Book'}
@@ -437,13 +437,13 @@ export function TenantWebsite({
       <div className="sticky top-0 z-40">
         {previewBanner}
         <header className="border-b border-[#e8ebf1] bg-paper/95 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-5">
             <Link
               href={`/${locale}`}
-              className="flex min-w-0 items-center gap-2 text-sm font-semibold"
+              className="flex min-w-0 items-center gap-2 text-base font-semibold"
             >
               {logo ? (
-                <img src={logo} alt="" className="h-8 w-auto max-w-full shrink-0 object-contain" />
+                <img src={logo} alt="" className="h-9 w-auto max-w-full shrink-0 object-contain" />
               ) : (
                 <span
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
@@ -476,7 +476,7 @@ export function TenantWebsite({
               {showServices && serviceRows.length > 0 && (
                 <a
                   href="#services"
-                  className="hidden text-sm font-medium text-[#647087] transition hover:text-[var(--site-primary)] sm:inline-block"
+                  className="hidden text-base font-medium text-[#647087] transition hover:text-[var(--site-primary)] sm:inline-block"
                 >
                   {rtl ? 'الخدمات' : 'Services'}
                 </a>
@@ -484,11 +484,11 @@ export function TenantWebsite({
               {localeSwitch}
               <Link
                 href={`/${locale}/tenants/${slug}/book`}
-                className="flex min-w-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+                className="flex min-w-0 items-center gap-1.5 rounded-lg px-3.5 py-2.5 text-base font-semibold text-white transition hover:opacity-90"
                 style={{ backgroundColor: 'var(--site-primary)' }}
               >
                 <span className="truncate">{ctaLabel}</span>
-                <ArrowRight className="h-4 w-4 shrink-0" />
+                <ArrowRight className="h-5 w-5 shrink-0" />
               </Link>
             </nav>
           </div>
@@ -499,11 +499,11 @@ export function TenantWebsite({
       {orderedTypes.map((type) => SECTION_RENDERERS[type]?.())}
 
       {/* Footer */}
-      <footer className="border-t border-border bg-paper py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-center gap-2 px-4 py-1 sm:px-6">
-          <span className="text-xs text-[#a0a8b6]">{rtl ? 'مدعوم بواسطة' : 'Powered by'}</span>
-          <Link href="/" className="flex items-center gap-1 text-xs font-semibold text-brand-teal" aria-label="Idarty">
-            <LogoIcon height={14} />
+      <footer className="border-t border-border bg-paper py-5">
+        <div className="mx-auto flex max-w-7xl items-center justify-center gap-2 px-4 py-1 sm:px-6">
+          <span className="text-sm text-[#a0a8b6]">{rtl ? 'مدعوم بواسطة' : 'Powered by'}</span>
+          <Link href="/" className="flex items-center gap-1 text-sm font-semibold text-brand-teal" aria-label="Idarty">
+            <LogoIcon height={16} />
             <span>{rtl ? 'إدارتي' : 'Idarty'}</span>
           </Link>
         </div>

@@ -143,15 +143,15 @@ describe('req 2 — hero is full-bleed with a constrained content container', ()
     )
     expect(section).toBeDefined()
     // The section itself must NOT be capped at the content width.
-    expect(section!.props.className).not.toContain('max-w-6xl')
+    expect(section!.props.className).not.toContain('max-w-7xl')
   })
 
-  it('keeps the text/CTA in a max-w-6xl container', () => {
+  it('keeps the text/CTA in a max-w-7xl container', () => {
     const els = collect(
       TenantWebsite({ ...baseProps, serviceRows: [], config: heroConfig({ heroImage: PNG_DATA_URL }) })
     )
     const container = els.find(
-      (e) => typeof e.props.className === 'string' && e.props.className.includes('max-w-6xl')
+      (e) => typeof e.props.className === 'string' && e.props.className.includes('max-w-7xl')
     )
     expect(container).toBeDefined()
     // ...and that container is what holds the heading.
@@ -184,7 +184,7 @@ describe('req 2 — hero is full-bleed with a constrained content container', ()
     )
     // The services section still uses the standard readable container.
     expect(
-      els.some((e) => typeof e.props.className === 'string' && e.props.className.includes('max-w-6xl'))
+      els.some((e) => typeof e.props.className === 'string' && e.props.className.includes('max-w-7xl'))
     ).toBe(true)
   })
 })

@@ -29,12 +29,10 @@ describe('Website Builder toolbar language switcher removal', () => {
   })
 
   it('keeps every other toolbar action', () => {
-    for (const action of ['handleLiveWebsite', 'handlePreview', 'handleSaveDraft', 'handlePublish', 'handleDiscard']) {
+    for (const action of ['handlePreview', 'handleSaveDraft', 'handlePublish', 'handleDiscard']) {
       expect(editorSource).toContain(action)
     }
     // The visible labels for the preserved actions.
-    expect(editorSource).toContain("'الموقع المباشر'")
-    expect(editorSource).toContain("'Live website'")
     expect(editorSource).toContain("'معاينة المسودة'")
     expect(editorSource).toContain("'Preview draft'")
   })

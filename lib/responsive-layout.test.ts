@@ -89,8 +89,12 @@ describe('website editor action bar fits on mobile', () => {
   })
 
   it('centres button labels in the grid cells', () => {
+    // 4 action buttons remain in the grid (Preview, Save draft, Discard, Publish).
+    // The former Live Website button was replaced by the URL container, which is
+    // not a centred button. The guard still checks every remaining button label
+    // is centred in its grid cell.
     const centred = editor.match(/text-center text-sm font-semibold/g) ?? []
-    expect(centred.length).toBeGreaterThanOrEqual(5)
+    expect(centred.length).toBeGreaterThanOrEqual(4)
   })
 
   it('does not clip button labels with truncate or a fixed width', () => {

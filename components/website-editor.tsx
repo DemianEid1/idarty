@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { saveDraft } from '@/lib/publish-actions'
 import { publishChanges, discardDraft } from '@/lib/publish-actions'
+import { publicTenantUrl } from '@/lib/routes'
 import {
   isRenderableSectionType,
   SECTION_CONTENT_FIELDS,
@@ -13,6 +14,7 @@ import {
   type WebsiteConfig,
 } from '@/lib/website-config'
 import { useToast } from '@/components/toast'
+import { Check, Copy, ExternalLink, Globe } from 'lucide-react'
 import { THEME_PRESETS, applyPreset, detectPreset } from '@/lib/theme-presets'
 import { MAX_HERO_IMAGE_SIZE, SUPPORTED_IMAGE_MIME_TYPES } from '@/lib/image-validation'
 import { ImageCropper } from '@/components/image-cropper'
@@ -418,6 +420,40 @@ export function WebsiteEditor({
     }
   }, [hasUnsavedChanges, locale, slug, rtl, router])
 
+  // --- Live website URL (toolbar) ---
+  const publicUrl = publicTenantUrl(locale, slug)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle')
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current) }, [])
+
+  const handleCopyUrl = useCallback(async () => {
+    const absolute = /^https?:\/\//i.test(publicUrl) ? publicUrl : `${window.location.origin}${publicUrl}`
+    let ok = false
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(absolute)
+        ok = true
+      } else {
+        const area = document.createElement('textarea')
+        area.value = absolute
+        area.setAttribute('readonly', '')
+        area.style.position = 'fixed'
+        area.style.top = '0'
+        area.style.opacity = '0'
+        document.body.appendChild(area)
+        area.select()
+        ok = document.execCommand('copy')
+        document.body.removeChild(area)
+      }
+    } catch {
+      ok = false
+    }
+    setCopyStatus(ok ? 'copied' : 'error')
+    if (copyTimer.current) clearTimeout(copyTimer.current)
+    copyTimer.current = setTimeout(() => setCopyStatus('idle'), ok ? 2000 : 3000)
+  }, [publicUrl])
+
   // Live website
   const handleLiveWebsite = useCallback(() => {
     window.open(`/${locale}/tenants/${slug}`, '_blank')
@@ -475,13 +511,38 @@ export function WebsiteEditor({
           )}
         </div>
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
-          <button
-            type="button"
-            onClick={handleLiveWebsite}
-            className="rounded-xl border border-border bg-paper px-4 py-2 text-center text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal"
-          >
-            {rtl ? 'الموقع المباشر' : 'Live website'}
-          </button>
+          {/* Live website URL container — replaces the standalone button.
+              Uses the same URL helper as the Overview page, so the displayed
+              URL is always consistent. */}
+          <div className="col-span-2 flex min-w-0 items-center gap-2 rounded-xl border border-border bg-paper px-3 py-2 sm:col-span-1">
+            <Globe aria-hidden="true" className="h-4 w-4 shrink-0 text-brand-teal" />
+            <span dir="ltr" title={publicUrl} className="min-w-0 flex-1 wrap-anywhere font-mono text-xs text-ink-muted">
+              {publicUrl}
+            </span>
+            <button
+              type="button"
+              onClick={handleCopyUrl}
+              aria-label={rtl ? 'نسخ رابط الموقع' : 'Copy website link'}
+              title={rtl ? 'نسخ الرابط' : 'Copy link'}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#516078] outline-none transition hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2"
+            >
+              {copyStatus === 'copied' ? (
+                <Check aria-hidden="true" className="h-4 w-4 text-[#24865b]" />
+              ) : (
+                <Copy aria-hidden="true" className="h-4 w-4" />
+              )}
+            </button>
+            <a
+              href={publicUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={rtl ? 'فتح الموقع في تبويب جديد' : 'Open website in a new tab'}
+              title={rtl ? 'فتح الموقع' : 'Open website'}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#516078] outline-none transition hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2"
+            >
+              <ExternalLink aria-hidden="true" className="h-4 w-4" />
+            </a>
+          </div>
           <button
             type="button"
             onClick={handlePreview}
