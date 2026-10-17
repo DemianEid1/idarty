@@ -3,6 +3,7 @@ import {
   createDefaultWebsiteConfig,
   safeParseWebsiteConfig,
   resolveSiteBackground,
+  parseWebsiteConfig,
   type WebsiteConfig,
 } from './website-config'
 import { THEME_PRESETS, applyPreset } from './theme-presets'
@@ -67,7 +68,7 @@ describe('theme preset rendering', () => {
 
   it('tenant theme is used when the config has no theme override', () => {
     const vars = resolveSiteThemeVars(
-      { theme: {}, sections: [] },
+      parseWebsiteConfig({ theme: {}, sections: [] }),
       { primaryColor: '#123456' }
     )
     expect(vars['--site-primary']).toBe('#123456')

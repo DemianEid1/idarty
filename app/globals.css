@@ -185,3 +185,15 @@
 .tenant-site :where(h1, h2, h3, p, a, span, li, dd, dt) {
   overflow-wrap: anywhere;
 }
+/* Reserve room for the fixed mobile floating action button (Mobile Sticky CTA).
+   The button is `md:hidden`, so this padding must also stop at `md` — below that
+   breakpoint it keeps the last section clear of the button; at/above it the button
+   does not render and the extra space is simply blank page below the footer. */
+.tenant-site--has-sticky-cta {
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 48rem) {
+  .tenant-site--has-sticky-cta {
+    padding-bottom: 0;
+  }
+}

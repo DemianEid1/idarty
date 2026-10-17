@@ -282,6 +282,13 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
               </p>
             </div>
             <WebsiteEditor
+              // Keyed by locale so switching language REMOUNTS the editor and
+              // re-initialises its draft state from that locale's server props.
+              // Without this, React preserved the existing instance across the
+              // locale navigation and `useState` never re-ran, so the editor kept
+              // showing the previous language's configuration (the reported
+              // Arabic/English inconsistency).
+              key={locale}
               locale={locale}
               slug={slug}
               initialConfig={draftWebsiteConfig}

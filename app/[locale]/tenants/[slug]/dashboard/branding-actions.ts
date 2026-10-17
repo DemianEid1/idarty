@@ -3,11 +3,11 @@
 import { headers } from 'next/headers'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { revalidatePath, revalidateTag } from 'next/cache'
+import { revalidatePath, updateTag } from 'next/cache'
 import { db } from '@/lib/db'
 import { tenants, websiteConfig } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
-import { safeParseWebsiteConfig } from '@/lib/website-config'
+import { safeParseWebsiteConfig, validateWebsiteConfigForWrite } from '@/lib/website-config'
 import type { Locale } from '@/lib/i18n'
 
 const schema = z.object({
@@ -37,6 +37,8 @@ export async function saveBrandingColors(input: z.infer<typeof schema>) {
   })
 
   if (configRow) {
+    // Tolerant READ: recovers only shape errors and never constrains length, so
+    // an existing value (including a long one) is never blanked by this route.
     const draftConfig = safeParseWebsiteConfig(configRow.draft)
     if (draftConfig) {
       const updatedDraft = {
@@ -48,10 +50,21 @@ export async function saveBrandingColors(input: z.infer<typeof schema>) {
           logo: data.logoBase64 ?? draftConfig.theme.logo,
         },
       }
+
+      // STRICT WRITE: the same shared validator saveDraft/publishChanges use, so
+      // this route cannot persist a configuration the write rules reject. If the
+      // existing draft carries an over-ceiling value the branding change is
+      // reported rather than silently normalized away.
+      const validated = validateWebsiteConfigForWrite(updatedDraft)
+      if (!validated.ok) {
+        return { ok: false as const, error: 'VALIDATION_FAILED', errors: validated.errors }
+      }
+
       await db
         .update(websiteConfig)
         .set({
-          draft: updatedDraft as unknown as Record<string, unknown>,
+          // Draft column only — this route never writes the published columns.
+          draft: validated.config as unknown as Record<string, unknown>,
           updatedAt: new Date(),
         })
         .where(eq(websiteConfig.tenantId, access.tenant.id))
@@ -60,7 +73,13 @@ export async function saveBrandingColors(input: z.infer<typeof schema>) {
 
   revalidatePath(`/${data.locale}/tenants/${data.slug}/dashboard`)
   revalidatePath(`/${data.locale}/tenants/${data.slug}`)
-  revalidateTag(`tenant-public-${data.slug}-${data.locale}`, 'max')
+  // The website configuration is SHARED across locales (one `website_config`
+  // row per tenant), so BOTH locale caches must be invalidated — otherwise the
+  // other language keeps serving the previous branding. `updateTag` expires the
+  // entry immediately (read-your-own-writes) instead of serving one stale
+  // response the way `revalidateTag(tag, 'max')` does.
+  updateTag(`tenant-public-${data.slug}-ar`)
+  updateTag(`tenant-public-${data.slug}-en`)
 
   return { ok: true as const }
 }

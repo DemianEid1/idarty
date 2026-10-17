@@ -2,35 +2,69 @@
 
 import { headers } from 'next/headers'
 import { eq } from 'drizzle-orm'
-import { revalidatePath, revalidateTag } from 'next/cache'
+import { revalidatePath, updateTag } from 'next/cache'
 import { db } from '@/lib/db'
 import { websiteConfig, tenants } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { logAudit } from '@/lib/audit'
-import { parseWebsiteConfig, safeParseWebsiteConfig, createDefaultWebsiteConfig } from '@/lib/website-config'
+import { parseWebsiteConfig, safeParseWebsiteConfig, createDefaultWebsiteConfig, validateWebsiteConfigForWrite } from '@/lib/website-config'
+import {
+  collectContactSocialIssues,
+  collectPublishIssues,
+  type ValidationIssue,
+} from '@/lib/contact-social'
 import type { Locale } from '@/lib/i18n'
+
+// ---------------------------------------------------------------------------
+// Result shapes
+//
+// The actions report failures as structured data rather than throwing, so the
+// editor can show a field-level message and keep the tenant's text on screen.
+// `errors` is only present when `ok` is false.
+// ---------------------------------------------------------------------------
+
+export type ActionResult =
+  | { ok: true }
+  | { ok: false; error: string; errors?: ValidationIssue[] }
+
+/**
+ * Validate a configuration for PERSISTENCE.
+ *
+ * Delegates to the SHARED write validator in lib/website-config.ts, which is
+ * also used by the branding action, so every writer enforces the same payload
+ * ceiling and core schema. Returns structured issues rather than throwing, so
+ * the client's state is never disturbed by an exception.
+ */
+function validateForWrite(
+  input: unknown
+): { ok: true; config: ReturnType<typeof parseWebsiteConfig> } | { ok: false; errors: ValidationIssue[] } {
+  return validateWebsiteConfigForWrite(input)
+}
 
 // ---------------------------------------------------------------------------
 // Save Draft
 // Updates the tenant's draft configuration with validated input.
 // ---------------------------------------------------------------------------
 
-export async function saveDraft(input: { slug: string; locale: Locale; config: unknown }) {
+export async function saveDraft(input: { slug: string; locale: Locale; config: unknown }): Promise<ActionResult> {
   const access = await requireTenantAccess(await headers(), input.slug, 'manager')
 
-  const validated = parseWebsiteConfig(input.config)
+  const validated = validateForWrite(input.config)
+  if (!validated.ok) {
+    return { ok: false, error: 'VALIDATION_FAILED', errors: validated.errors }
+  }
 
   await db
     .insert(websiteConfig)
     .values({
       tenantId: access.tenant.id,
-      draft: validated as unknown as Record<string, unknown>,
+      draft: validated.config as unknown as Record<string, unknown>,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: websiteConfig.tenantId,
       set: {
-        draft: validated as unknown as Record<string, unknown>,
+        draft: validated.config as unknown as Record<string, unknown>,
         updatedAt: new Date(),
       },
     })
@@ -41,7 +75,7 @@ export async function saveDraft(input: { slug: string; locale: Locale; config: u
     entityType: 'website_config',
     entityId: access.tenant.id,
     tenantId: access.tenant.id,
-    metadata: { slug: input.slug, sectionsCount: validated.sections.length },
+    metadata: { slug: input.slug, sectionsCount: validated.config.sections.length },
   })
 
   revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)
@@ -55,14 +89,18 @@ export async function saveDraft(input: { slug: string; locale: Locale; config: u
 // If config is omitted, reads the persisted draft and publishes that.
 // ---------------------------------------------------------------------------
 
-export async function publishChanges(input: { slug: string; locale: Locale; config?: unknown }) {
+export async function publishChanges(input: { slug: string; locale: Locale; config?: unknown }): Promise<ActionResult> {
   const access = await requireTenantAccess(await headers(), input.slug, 'admin')
 
   let validated: ReturnType<typeof parseWebsiteConfig>
 
   if (input.config !== undefined) {
     // Direct publish: validate the submitted config
-    validated = parseWebsiteConfig(input.config)
+    const result = validateForWrite(input.config)
+    if (!result.ok) {
+      return { ok: false, error: 'VALIDATION_FAILED', errors: result.errors }
+    }
+    validated = result.config
   } else {
     // Publish saved draft: read from database
     const row = await db.query.websiteConfig.findFirst({
@@ -73,7 +111,23 @@ export async function publishChanges(input: { slug: string; locale: Locale; conf
       return { ok: false as const, error: 'NO_DRAFT' }
     }
 
-    validated = parseWebsiteConfig(row.draft)
+    const parsed = safeParseWebsiteConfig(row.draft)
+    if (!parsed) {
+      return { ok: false as const, error: 'VALIDATION_FAILED' }
+    }
+    const issues = collectContactSocialIssues(parsed.contact, parsed.social)
+    if (issues.length > 0) {
+      return { ok: false as const, error: 'VALIDATION_FAILED', errors: issues }
+    }
+    validated = parsed
+  }
+
+  // Publish gate — applies to BOTH branches above, so neither can bypass it.
+  // The selected CTA action must have a usable destination; there is
+  // deliberately no fallback to a different action.
+  const publishIssues = collectPublishIssues(validated.cta, validated.contact)
+  if (publishIssues.length > 0) {
+    return { ok: false as const, error: 'CTA_NO_DESTINATION', errors: publishIssues }
   }
 
   // Atomically update both draft and published in a single transaction
@@ -99,8 +153,21 @@ export async function publishChanges(input: { slug: string; locale: Locale; conf
     metadata: { slug: input.slug, sectionsCount: validated.sections.length, directPublish: input.config !== undefined },
   })
 
+  revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)
   revalidatePath(`/${input.locale}/tenants/${input.slug}`)
-  revalidateTag(`tenant-public-${input.slug}-${input.locale}`, 'max')
+  // The PUBLIC page reads through `unstable_cache` tagged
+  // `tenant-public-<slug>-<locale>`. `revalidateTag(tag, 'max')` only marks that
+  // entry STALE, so the next request is served the OLD cached page while
+  // revalidation runs in the background — a tenant who published and then opened
+  // their site still saw the previous version for up to the cache window.
+  // `updateTag` expires the entry so the next request waits for fresh data
+  // (read-your-own-writes), which is what publishing requires.
+  //
+  // Both locales are invalidated because the configuration is SHARED across
+  // locales (one `website_config` row per tenant) — invalidating only the
+  // current locale left the other language serving stale content.
+  updateTag(`tenant-public-${input.slug}-ar`)
+  updateTag(`tenant-public-${input.slug}-en`)
 
   return { ok: true as const }
 }

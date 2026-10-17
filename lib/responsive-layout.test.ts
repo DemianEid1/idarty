@@ -19,6 +19,9 @@ const dashboard = read('../app/[locale]/tenants/[slug]/dashboard/page.tsx')
 // The persistent shell (sidebar + header) now lives in the layout.
 const shell = read('../app/[locale]/tenants/[slug]/dashboard/layout.tsx')
 const editor = read('../components/website-editor.tsx')
+// The editor's panels are now collapsible sections, so the panel card padding
+// lives in the shared accordion component.
+const accordion = read('../components/accordion-section.tsx')
 const staffServices = read('../components/staff-services-form.tsx')
 
 describe('no horizontal overflow: flex rows wrap and shrink', () => {
@@ -110,8 +113,12 @@ describe('mobile card padding is consistent and fluid', () => {
   })
 
   it('editor cards use p-5 then sm:p-6', () => {
-    const cards = editor.match(/bg-paper p-5 shadow-float sm:p-6/g) ?? []
-    expect(cards.length).toBeGreaterThanOrEqual(3)
+    // Every editor panel is wrapped by AccordionSection, which owns the fluid
+    // panel padding (p-5 → sm:p-6). Assert on the component that now renders it.
+    const cards = accordion.match(/bg-paper p-5 shadow-float sm:p-6/g) ?? []
+    expect(cards.length).toBeGreaterThanOrEqual(1)
+    // The editor still composes its panels through that component.
+    expect(editor).toContain('<AccordionSection')
   })
 
   it('the outer section uses fluid padding, not a fixed p-4', () => {

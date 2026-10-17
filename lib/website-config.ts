@@ -1,5 +1,26 @@
 import { z } from 'zod'
 import { isValidHeroImageDataUrl } from '@/lib/image-validation'
+import {
+  contactSchemaRead,
+  contactSchemaWrite,
+  socialSchemaRead,
+  socialSchemaWrite,
+  ctaSchemaRead,
+  ctaSchemaWrite,
+  mobileStickyCtaSchemaRead,
+  mobileStickyCtaSchemaWrite,
+  createDefaultContact,
+  createDefaultSocial,
+  createDefaultCta,
+  createDefaultMobileStickyCta,
+  hasVisibleContactData,
+  collectContactSocialIssues,
+  type ValidationIssue,
+  type ContactConfig,
+  type SocialConfig,
+  type CtaConfig,
+  type MobileStickyCtaConfig,
+} from '@/lib/contact-social'
 
 // ---------------------------------------------------------------------------
 // Website Configuration Validation
@@ -53,7 +74,7 @@ export const websiteSectionType = z.enum([
  * renderer. Anything outside this list is dropped at render time so an
  * unsupported section can never silently produce an incomplete website.
  */
-export const RENDERABLE_SECTION_TYPES = ['hero', 'services'] as const
+export const RENDERABLE_SECTION_TYPES = ['hero', 'services', 'contact'] as const
 export type RenderableSectionType = (typeof RENDERABLE_SECTION_TYPES)[number]
 
 export function isRenderableSectionType(type: string): type is RenderableSectionType {
@@ -116,6 +137,10 @@ export const SECTION_CONTENT_FIELDS: Record<RenderableSectionType, SectionConten
     { key: 'heading', maxLength: 100, multiline: false },
     { key: 'description', maxLength: 300, multiline: true },
   ],
+  contact: [
+    { key: 'heading', maxLength: 100, multiline: false },
+    { key: 'description', maxLength: 300, multiline: true },
+  ],
 }
 
 export const websiteSection = z.object({
@@ -173,14 +198,79 @@ export const websiteThemeOverride = z
   })
   .passthrough()
 
+/**
+ * Coerce a non-object container to `undefined` so the schema's `.default()`
+ * engages. This is deliberately NOT a `.catch()`: a container-level catch would
+ * discard every sibling field when only one leaf is malformed. Here, a *valid*
+ * object parses normally and the leaf-level `.catch()` in lib/contact-social.ts
+ * recovers individual failures.
+ */
+const asPlainObject = (v: unknown) =>
+  v !== null && typeof v === 'object' && !Array.isArray(v) ? v : undefined
+
 export const websiteConfigSchema = z.object({
   theme: websiteThemeOverride.default({}),
   sections: z.array(websiteSection).max(20).default([]),
+  // New settings are optional: a legacy configuration that lacks them parses
+  // with defaults, keeping its theme, logo, hero image and sections intact.
+  contact: z.preprocess(asPlainObject, contactSchemaRead.default(() => createDefaultContact())),
+  social: z.preprocess(asPlainObject, socialSchemaRead.default(() => createDefaultSocial())),
+  cta: z.preprocess(asPlainObject, ctaSchemaRead.default(() => createDefaultCta())),
+  mobileStickyCta: z.preprocess(
+    asPlainObject,
+    mobileStickyCtaSchemaRead.default(() => createDefaultMobileStickyCta())
+  ),
 })
 
 export type WebsiteConfig = z.infer<typeof websiteConfigSchema>
 export type WebsiteSection = z.infer<typeof websiteSection>
 export type WebsiteThemeOverride = z.infer<typeof websiteThemeOverride>
+export type { ContactConfig, SocialConfig, CtaConfig, MobileStickyCtaConfig }
+
+/**
+ * The STRICT write schema. Identical to `websiteConfigSchema` for the core
+ * (`theme`, `sections`), but the contact/social containers use the strict leaf
+ * schemas so an over-ceiling value is REPORTED rather than recovered.
+ *
+ * This is the single validation entry point for every writer of the website
+ * configuration, so no route can persist a value the write rules reject.
+ */
+export const websiteConfigWriteSchema = z.object({
+  theme: websiteThemeOverride.default({}),
+  sections: z.array(websiteSection).max(20).default([]),
+  contact: z.preprocess(asPlainObject, contactSchemaWrite.default(() => createDefaultContact())),
+  social: z.preprocess(asPlainObject, socialSchemaWrite.default(() => createDefaultSocial())),
+  cta: z.preprocess(asPlainObject, ctaSchemaWrite.default(() => createDefaultCta())),
+  mobileStickyCta: z.preprocess(
+    asPlainObject,
+    mobileStickyCtaSchemaWrite.default(() => createDefaultMobileStickyCta())
+  ),
+})
+
+export type WriteValidation =
+  | { ok: true; config: WebsiteConfig }
+  | { ok: false; errors: ValidationIssue[] }
+
+/**
+ * Validate a configuration for PERSISTENCE.
+ *
+ * Used by every writer (saveDraft, publishChanges, and the branding action) so
+ * the payload ceiling and the core schema are enforced in one place. Returns
+ * structured issues instead of throwing, so callers can report a field-level
+ * error and leave the client's state untouched.
+ */
+export function validateWebsiteConfigForWrite(input: unknown): WriteValidation {
+  try {
+    const config = websiteConfigWriteSchema.parse(input)
+    const issues = collectContactSocialIssues(config.contact, config.social)
+    if (issues.length > 0) return { ok: false, errors: issues }
+    return { ok: true, config }
+  } catch {
+    // A structural failure (malformed theme/sections) has no single field to
+    // attribute, so it is reported as a general validation failure.
+    return { ok: false, errors: [{ field: 'config', code: 'INVALID_TYPE' }] }
+  }
+}
 
 /**
  * The website's default page background. Matches the historical hardcoded value
@@ -258,7 +348,20 @@ export function createDefaultWebsiteConfig(): WebsiteConfig {
         content: { ar: {}, en: {} },
         dataSource: { type: 'services', sort: 'sortOrder' },
       },
+      // Contact sits after Services and before the Footer, as specified.
+      {
+        id: 'sec_contact',
+        type: 'contact',
+        variant: 'default',
+        isVisible: true,
+        sortOrder: 2,
+        content: { ar: {}, en: {} },
+      },
     ],
+    contact: createDefaultContact(),
+    social: createDefaultSocial(),
+    cta: createDefaultCta(),
+    mobileStickyCta: createDefaultMobileStickyCta(),
   }
 }
 
@@ -358,11 +461,21 @@ export function moveSection(config: WebsiteConfig, sectionId: string, direction:
  *   renders an intentional empty state rather than overriding the user).
  * - When no configuration exists: returns the legacy default order so tenants
  *   that have never saved a website config keep their existing public page.
+ *
+ * The `contact` section additionally requires at least one visible, non-empty
+ * contact field. A tenant may leave the section enabled while every field is
+ * hidden or blank; rather than rendering an empty Contact block, the section is
+ * dropped — the Website Builder surfaces the problem as a warning instead.
  */
 export function resolveOrderedSectionTypes(config: WebsiteConfig | null): string[] {
   if (!config) return [...RENDERABLE_SECTION_TYPES]
   return [...config.sections]
     .filter((s) => s.isVisible && isRenderableSectionType(s.type))
+    // The contact section is dropped when it would render nothing at all. The
+    // Main CTA it hosts also renders in the header, footer and mobile sticky
+    // bar, so dropping an empty contact section never loses the CTA — and no
+    // legacy site gains a section it never had.
+    .filter((s) => s.type !== 'contact' || hasVisibleContactData(config.contact))
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((s) => s.type)
 }

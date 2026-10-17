@@ -19,6 +19,7 @@ vi.mock('@/lib/audit', () => ({
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
   revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
 }))
 
 vi.mock('next/headers', () => ({
@@ -185,26 +186,57 @@ describe('website builder server actions', () => {
       expect(valuesArg).not.toHaveProperty('publishedAt')
     })
 
-    it('rejects an invalid configuration before writing', async () => {
+    it('reports an invalid configuration as a structured error and writes nothing', async () => {
       const { saveDraft } = await import('./publish-actions')
-      await expect(
-        saveDraft({ slug: 'bebo-salon', locale: 'ar', config: { sections: 'nope' } })
-      ).rejects.toThrow()
+      const result = await saveDraft({ slug: 'bebo-salon', locale: 'ar', config: { sections: 'nope' } })
+
+      // Failures are reported as data, not thrown, so the editor can keep the
+      // tenant's text on screen and show a field-level message.
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toBe('VALIDATION_FAILED')
+        expect(result.errors?.length).toBeGreaterThan(0)
+      }
+      // The security-relevant half: nothing reached the database.
       expect(insert).not.toHaveBeenCalled()
     })
 
-    it('rejects an oversized content value (server-side bound)', async () => {
+    it('reports an oversized contact value as a field error and writes nothing', async () => {
       const { saveDraft } = await import('./publish-actions')
-      await expect(
-        saveDraft({
-          slug: 'bebo-salon',
-          locale: 'ar',
-          config: {
-            theme: {},
-            sections: [{ id: 's1', type: 'hero', content: { en: { headline: 'x'.repeat(600) } } }],
+      const result = await saveDraft({
+        slug: 'bebo-salon',
+        locale: 'ar',
+        config: {
+          theme: {},
+          sections: [{ id: 's1', type: 'hero', content: {} }],
+          contact: {
+            phone: { value: '', isVisible: false },
+            whatsapp: { value: '', isVisible: false },
+            email: { value: '', isVisible: false },
+            address: { value: 'x'.repeat(5000), isVisible: true },
+            googleMapsUrl: { value: '', isVisible: false },
           },
-        })
-      ).rejects.toThrow()
+        },
+      })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors?.some((e) => e.field === 'contact.address.value' && e.code === 'TOO_LONG')).toBe(true)
+      }
+      expect(insert).not.toHaveBeenCalled()
+    })
+
+    it('reports an oversized section content value and writes nothing', async () => {
+      const { saveDraft } = await import('./publish-actions')
+      const result = await saveDraft({
+        slug: 'bebo-salon',
+        locale: 'ar',
+        config: {
+          theme: {},
+          sections: [{ id: 's1', type: 'hero', content: { en: { headline: 'x'.repeat(600) } } }],
+        },
+      })
+      expect(result.ok).toBe(false)
       expect(insert).not.toHaveBeenCalled()
     })
   })

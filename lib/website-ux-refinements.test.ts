@@ -97,8 +97,16 @@ describe('req 2 — hero opacity applies to the image layer only', () => {
     expect(cta!.props.style?.opacity).toBeUndefined()
 
     // The overlay is a distinct element and is not made translucent.
+    // Matched on its ROLE (a separate, full-bleed overlay layer) rather than on
+    // a specific gradient utility: the implementation may use Tailwind gradient
+    // classes or an inline `linear-gradient`, and both satisfy the requirement.
     const overlay = els.find(
-      (e) => typeof e.props.className === 'string' && e.props.className.includes('from-black/45')
+      (e) =>
+        typeof e.props.className === 'string' &&
+        e.props.className.includes('absolute inset-0') &&
+        (e.props.className.includes('bg-gradient-to-') ||
+          (typeof (e.props.style as Record<string, unknown> | undefined)?.background === 'string' &&
+            String((e.props.style as Record<string, unknown>).background).includes('linear-gradient')))
     )
     expect(overlay).toBeDefined()
     expect(overlay!.props.style?.opacity).toBeUndefined()
@@ -113,10 +121,13 @@ describe('req 2 — hero opacity applies to the image layer only', () => {
       (e) => typeof e.props.className === 'string' && e.props.className.includes('bg-white/80')
     )
     expect(flatWhiteWash).toBeUndefined()
-    // The replacement darkens only the area behind the text.
-    const gradient = els.find(
-      (e) => typeof e.props.className === 'string' && e.props.className.includes('bg-gradient-to-t')
-    )
+    // The replacement darkens only the area behind the text. It must be a
+    // GRADIENT — via Tailwind classes or an inline linear-gradient.
+    const gradient = els.find((e) => {
+      const cls = typeof e.props.className === 'string' ? e.props.className : ''
+      const bg = String((e.props.style as Record<string, unknown> | undefined)?.background ?? '')
+      return cls.includes('bg-gradient-to-') || bg.includes('linear-gradient')
+    })
     expect(gradient).toBeDefined()
   })
 
@@ -380,8 +391,17 @@ describe('req 3 — one consistent service-card image area', () => {
     expect(els.some((e) => typeof e.props.children === 'string' && e.props.children === 'قص شعر')).toBe(true)
     expect(els.some((e) => typeof e.props.children === 'string' && e.props.children === '100')).toBe(true)
     expect(els.some((e) => typeof e.props.href === 'string' && e.props.href.includes('service=a'))).toBe(true)
-    // Duration label is rendered too.
-    expect(els.some((e) => typeof e.props.children === 'string' && e.props.children.includes('دقيقة'))).toBe(true)
+    // Duration label is rendered too. It now sits beside a Clock3 icon, so the
+    // text is one entry in a children array rather than the element's only
+    // child — the assertion flattens children to text so it stays structure
+    // agnostic while still proving the localized duration reaches the DOM.
+    const textOf = (children: unknown): string => {
+      if (typeof children === 'string') return children
+      if (typeof children === 'number') return String(children)
+      if (Array.isArray(children)) return children.map(textOf).join(' ')
+      return ''
+    }
+    expect(els.some((e) => textOf(e.props.children).includes('دقيقة'))).toBe(true)
   })
 })
 

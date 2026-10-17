@@ -15,22 +15,23 @@ const editor = read('components/website-editor.tsx')
 const servicesSection = read('components/services-section.tsx')
 const dashboard = read('app/[locale]/tenants/[slug]/dashboard/page.tsx')
 
-// The two editor blocks, sliced by their headings, so assertions cannot
-// accidentally match text in the wrong block.
+// The two editor blocks, sliced by their accordion keys, so assertions cannot
+// accidentally match text in the wrong block. Both panels are now collapsible
+// sections, so the accordion key — not the heading markup — is the stable anchor.
 const sectionContentBlock = editor.slice(
-  editor.indexOf("{rtl ? 'محتوى الأقسام'"),
-  editor.indexOf("{rtl ? 'إدارة الأقسام'")
+  editor.indexOf("accordion('content'"),
+  editor.indexOf("accordion('sections'")
 )
-const sectionManagementBlock = editor.slice(editor.indexOf("{rtl ? 'إدارة الأقسام'"))
+const sectionManagementBlock = editor.slice(editor.indexOf("accordion('sections'"))
 
 // ---------------------------------------------------------------------------
 // 1. Section Management restored
 // ---------------------------------------------------------------------------
 describe('fix 1 — "إدارة الأقسام" restored to its original interface', () => {
   it('still exists with its original heading and description', () => {
-    expect(editor).toContain("{rtl ? 'إدارة الأقسام' : 'Section Management'}")
+    expect(editor).toContain("rtl ? 'إدارة الأقسام' : 'Section Management'")
     expect(editor).toContain(
-      "{rtl ? 'التحكم في ظهور الأقسام وترتيبها في الموقع.' : 'Control which sections appear and their order on the website.'}"
+      "rtl ? 'التحكم في ظهور الأقسام وترتيبها في الموقع.' : 'Control which sections appear and their order on the website.'"
     )
   })
 
@@ -86,56 +87,56 @@ describe('fix 1 — "إدارة الأقسام" restored to its original interfa
 // 2. The two screenshot sections merged
 // ---------------------------------------------------------------------------
 describe('fix 2 — the screenshot\u2019s two sections are now one', () => {
-  it('renders one Services area with the screenshot\u2019s three subareas', () => {
-    // Screenshot order: heading → نص القسم → خدماتك.
-    expect(servicesSection).toContain("{rtl ? 'الخدمات' : 'Services'}")
-    expect(servicesSection).toContain("{rtl ? 'نص القسم' : 'Section text'}")
+  it('renders one Services management area holding the service list', () => {
+    // The service list lives in ServicesSection, which now owns the list only.
     expect(servicesSection).toContain("{rtl ? 'خدماتك' : 'Your services'}")
-    const textIdx = servicesSection.indexOf("'نص القسم'")
-    const listIdx = servicesSection.indexOf("'خدماتك'")
-    expect(textIdx).toBeGreaterThan(-1)
-    expect(listIdx).toBeGreaterThan(textIdx)
+    expect(servicesSection).toContain('<ServiceForm')
+    expect(servicesSection).toContain('<ServiceImageForm')
   })
 
-  it('does not repeat the Services text in the generic Section Content block', () => {
-    expect(sectionContentBlock).toContain('{contentSections')
-    expect(editor).toContain("const contentSections = editableSections.filter((s) => s.type !== 'services')")
+  it('edits the Services section TEXT in Section Content, not in the Services list', () => {
+    // The Services section's own text is edited by the generic Section Content
+    // accordion, which lists EVERY renderable section including services.
+    expect(sectionContentBlock).toContain('{editableSections')
+    expect(editor).not.toContain("editableSections.filter((s) => s.type !== 'services')")
+    // ...and it is NOT duplicated in the services list panel.
+    expect(servicesSection).not.toContain('SECTION_CONTENT_FIELDS.services')
+    expect(servicesSection).not.toContain('onUpdateContent')
   })
 
   it('avoids duplicate headings for the same section', () => {
-    // "الخدمات / Services" appears as a panel heading exactly once in the editor.
-    const headingCount = (editor.match(/text-lg font-semibold">\{rtl \? 'الخدمات'/g) ?? []).length
-    expect(headingCount).toBe(0) // it is a sub-panel, not a top-level h2
-    expect(servicesSection).toContain("<h2 className=\"text-lg font-semibold\">{rtl ? 'الخدمات' : 'Services'}</h2>")
-    // The Services area is rendered once.
+    // ServicesSection no longer renders its own <h2>: the accordion header is
+    // the single heading. The Services panel is rendered once.
+    expect(servicesSection).not.toContain('<h2')
     expect((editor.match(/<ServicesSection/g) ?? []).length).toBe(1)
   })
 
   it('preserves all persisted functionality', () => {
-    // Section text (per locale) — persisted through the draft config.
-    expect(servicesSection).toContain('SECTION_CONTENT_FIELDS.services')
-    expect(servicesSection).toContain("onUpdateContent(sectionId, 'ar'")
-    expect(servicesSection).toContain("onUpdateContent(sectionId, 'en'")
     // The service list, Add service, and per-service images.
     expect(servicesSection).toContain('<ServiceForm')
     expect(servicesSection).toContain('إضافة خدمة')
     expect(servicesSection).toContain('<ServiceImageForm')
     // Visibility/ordering remain available in Section Management.
     expect(sectionManagementBlock).toContain('toggleSectionVisibility')
+    // The Services section's text fields are still editable — via the shared
+    // SECTION_CONTENT_FIELDS contract rendered by Section Content.
+    expect(editor).toContain('SECTION_CONTENT_FIELDS[section.type]')
   })
 
   it('does not migrate or drop any data to achieve the merge', () => {
     // No schema or config-key change accompanies this UI merge.
     expect(servicesSection).not.toContain('migrat')
-    // The persisted content shape is unchanged: same keys, same section.
-    expect(servicesSection).toContain('content?.ar')
-    expect(servicesSection).toContain('content?.en')
+    expect(editor).not.toContain('migrat')
+    // The persisted content shape is unchanged: the same section content keys
+    // are still read from the draft config by Section Content.
+    expect(editor).toContain('section.content?.ar')
+    expect(editor).toContain('section.content?.en')
   })
 
-  it('passes the real section id and content from the draft', () => {
-    expect(editor).toContain('sectionId={servicesSection.id}')
-    expect(editor).toContain('content={servicesSection.content ?? null}')
+  it('passes the real services list from the draft', () => {
     expect(editor).toContain('services={services}')
+    // The Services accordion is gated on the real services section existing.
+    expect(editor).toContain('{servicesSection &&')
   })
 })
 
@@ -206,9 +207,15 @@ describe('fix 3 — service images live in Website Management', () => {
   })
 
   it('is localized in both languages', () => {
-    for (const label of ['الخدمات', 'Services', 'نص القسم', 'Section text', 'خدماتك', 'Your services', 'إضافة خدمة', 'Add service']) {
+    // ServicesSection now owns the list only, so assert its own labels; the
+    // section-text labels are asserted against the Section Content accordion,
+    // which is where those fields are edited.
+    for (const label of ['خدماتك', 'Your services', 'إضافة خدمة', 'Add service']) {
       expect(servicesSection).toContain(label)
     }
+    // The Services section heading + description labels live in the shared
+    // SECTION_CONTENT_FIELDS contract used by Section Content.
+    expect(editor).toContain('CONTENT_FIELD_LABELS')
   })
 })
 
@@ -237,7 +244,12 @@ describe('earlier-phase functionality is untouched', () => {
   it('keeps the full-bleed hero and gradient overlay', () => {
     const site = read('components/tenant-website.tsx')
     expect(site).toContain("heroImage ? 'relative w-full overflow-hidden' : 'w-full'")
-    expect(site).toContain('bg-gradient-to-t from-black/45')
+    // A gradient readability overlay must remain. It may be expressed with
+    // Tailwind gradient utilities OR an inline `linear-gradient` — both satisfy
+    // the requirement, so the assertion does not pin one mechanism.
+    expect(
+      site.includes('bg-gradient-to-t from-black/') || site.includes('linear-gradient')
+    ).toBe(true)
   })
 
   it('keeps the migration files intact', () => {

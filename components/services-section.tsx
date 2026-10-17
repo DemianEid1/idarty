@@ -5,29 +5,26 @@ import { useRouter } from 'next/navigation'
 import { Plus, X } from 'lucide-react'
 import { ServiceForm } from '@/components/service-form'
 import { ServiceImageForm } from '@/components/service-image-form'
-import { SECTION_CONTENT_FIELDS } from '@/lib/website-config'
 import type { ImageCrop } from '@/lib/image-crop'
 import type { Locale } from '@/lib/i18n'
 
 /**
- * The Website Builder's Services area — the ONE place a tenant manages services.
+ * The Website Builder's Services management panel (خدماتك).
  *
  * RESPONSIBILITIES
  * ----------------
- *  A. The Services section's own text (heading + description, per locale).
- *  B. The service list with prices, plus Add service.
- *  C. Each service's image (upload / crop / replace / remove).
+ *  A. The service list with prices and durations, plus Add service.
+ *  B. Each service's image (upload / crop / replace / remove).
  *
- * WHY IT LOOKS LIKE THIS
- * ----------------------
- * The screenshot this was built to match shows the Services area as: the section
- * heading, then the section's text fields, then the service list. The
- * visibility/order sub-block that used to sit between them is deliberately GONE
- * — that concern belongs to "إدارة الأقسام / Section Management", which keeps
- * its original interface and still lists every section, services included.
+ * WHAT IS *NOT* HERE
+ * ------------------
+ * The Services SECTION's own text (heading + description, per locale) is edited
+ * in the Website Builder's "محتوى الأقسام / Section Content" accordion, which
+ * lists every renderable section including services. It is deliberately not
+ * repeated here — one editor per field.
  *
- * Section ordering and visibility therefore remain exactly where the tenant has
- * always found them, and this area no longer duplicates those controls.
+ * Visibility and ordering are likewise NOT here: they belong to
+ * "إدارة الأقسام / Section Management", which lists every section.
  *
  * IMAGES
  * ------
@@ -51,20 +48,11 @@ type ServiceRow = {
 export function ServicesSection({
   locale,
   slug,
-  content,
   services,
-  onUpdateContent,
-  onResetContent,
-  sectionId,
 }: {
   locale: Locale
   slug: string
-  /** The `services` section's stored content, or undefined when absent. */
-  content: { ar?: Record<string, string>; en?: Record<string, string> } | null
   services: ServiceRow[]
-  onUpdateContent: (sectionId: string, locale: 'ar' | 'en', field: string, value: string) => void
-  onResetContent: (sectionId: string) => void
-  sectionId: string
 }) {
   const rtl = locale === 'ar'
   const router = useRouter()
@@ -76,110 +64,10 @@ export function ServicesSection({
     router.refresh()
   }, [router])
 
-  const fields = SECTION_CONTENT_FIELDS.services
-  const contentAr = content?.ar ?? {}
-  const contentEn = content?.en ?? {}
-  const hasContent = fields.some(
-    (f) => (contentAr[f.key] ?? '') !== '' || (contentEn[f.key] ?? '') !== ''
-  )
-
-  const FIELD_LABELS: Record<string, { ar: string; en: string }> = {
-    heading: { ar: 'عنوان القسم', en: 'Section heading' },
-    description: { ar: 'وصف القسم', en: 'Section description' },
-  }
-
   return (
-    <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
-      {/* Heading */}
-      <h2 className="text-lg font-semibold">{rtl ? 'الخدمات' : 'Services'}</h2>
-      <p className="mt-1 text-sm text-ink-muted">
-        {rtl
-          ? 'نص قسم الخدمات، وقائمة خدماتك مع أسعارها وصورها.'
-          : 'Your Services section text, and the service list with prices and images.'}
-      </p>
-
-      {/* A. Section text */}
-      <div className="mt-6 rounded-2xl border border-[#edf0f4] bg-surface p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-semibold">{rtl ? 'نص القسم' : 'Section text'}</p>
-          {hasContent && (
-            <button
-              type="button"
-              onClick={() => onResetContent(sectionId)}
-              className="rounded-lg border border-[#e1e5ed] bg-paper px-3 py-1.5 text-xs font-semibold text-[#516078] transition hover:bg-surface"
-              title={rtl ? 'إعادة تعيين النص إلى الافتراضي' : 'Reset the text to its default'}
-            >
-              {rtl ? 'إعادة تعيين' : 'Reset'}
-            </button>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-ink-muted">
-          {rtl
-            ? 'اترك الحقل فارغاً لاستخدام النص الافتراضي.'
-            : 'Leave a field empty to use the default text.'}
-        </p>
-
-        <div className="mt-4 space-y-4">
-          {fields.map((field) => {
-            const meta = FIELD_LABELS[field.key] ?? { ar: field.key, en: field.key }
-            return (
-              <div key={field.key} className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-xs font-semibold text-[#647087]">
-                    {meta[locale]} ({rtl ? 'عربي' : 'Arabic'})
-                  </span>
-                  {field.multiline ? (
-                    <textarea
-                      value={contentAr[field.key] ?? ''}
-                      onChange={(e) => onUpdateContent(sectionId, 'ar', field.key, e.target.value)}
-                      maxLength={field.maxLength}
-                      rows={3}
-                      dir="rtl"
-                      className="mt-2 w-full rounded-xl border border-[#e1e5ed] bg-paper px-4 py-3 text-sm outline-none focus:border-brand-teal"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={contentAr[field.key] ?? ''}
-                      onChange={(e) => onUpdateContent(sectionId, 'ar', field.key, e.target.value)}
-                      maxLength={field.maxLength}
-                      dir="rtl"
-                      className="mt-2 h-11 w-full rounded-xl border border-[#e1e5ed] bg-paper px-4 text-sm outline-none focus:border-brand-teal"
-                    />
-                  )}
-                </label>
-                <label className="block">
-                  <span className="text-xs font-semibold text-[#647087]">
-                    {meta[locale]} ({rtl ? 'إنجليزي' : 'English'})
-                  </span>
-                  {field.multiline ? (
-                    <textarea
-                      value={contentEn[field.key] ?? ''}
-                      onChange={(e) => onUpdateContent(sectionId, 'en', field.key, e.target.value)}
-                      maxLength={field.maxLength}
-                      rows={3}
-                      dir="ltr"
-                      className="mt-2 w-full rounded-xl border border-[#e1e5ed] bg-paper px-4 py-3 text-sm outline-none focus:border-brand-teal"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={contentEn[field.key] ?? ''}
-                      onChange={(e) => onUpdateContent(sectionId, 'en', field.key, e.target.value)}
-                      maxLength={field.maxLength}
-                      dir="ltr"
-                      className="mt-2 h-11 w-full rounded-xl border border-[#e1e5ed] bg-paper px-4 text-sm outline-none focus:border-brand-teal"
-                    />
-                  )}
-                </label>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* B + C. The service list, each row carrying its own image controls */}
-      <div className="mt-4 rounded-2xl border border-[#edf0f4] bg-surface p-4">
+    <div className="space-y-4">
+      {/* The service list, each row carrying its own image controls */}
+      <div className="rounded-2xl border border-[#edf0f4] bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-semibold">{rtl ? 'خدماتك' : 'Your services'}</p>

@@ -14,13 +14,52 @@ import {
   type WebsiteConfig,
 } from '@/lib/website-config'
 import { useToast } from '@/components/toast'
-import { Check, Copy, ExternalLink, Globe } from 'lucide-react'
+import {
+  BriefcaseBusiness,
+  Check,
+  Contact,
+  Copy,
+  ExternalLink,
+  FileText,
+  Globe,
+  LayoutGrid,
+  MousePointerClick,
+  Palette,
+  Share2,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { THEME_PRESETS, applyPreset, detectPreset } from '@/lib/theme-presets'
 import { MAX_HERO_IMAGE_SIZE, SUPPORTED_IMAGE_MIME_TYPES } from '@/lib/image-validation'
 import { ImageCropper } from '@/components/image-cropper'
 import { ServicesSection } from '@/components/services-section'
+import { AccordionSection } from '@/components/accordion-section'
+import { ImageUploadZone } from '@/components/image-upload-zone'
 import { CROP_ASPECTS, resolveCrop, type ImageCrop } from '@/lib/image-crop'
 import { focalPointToCss } from '@/lib/image-focal-point'
+import {
+  CONTACT_PRACTICAL_LIMITS,
+  CTA_ACTIONS,
+  CTA_WARNINGS,
+  CONTACT_EMPTY_WARNING,
+  PHONE_FORMAT_HINT,
+  PHONE_INVALID_HINT,
+  URL_INVALID_HINT,
+  VALIDATION_MESSAGES,
+  SOCIAL_PLATFORMS,
+  createDefaultContact,
+  createDefaultSocial,
+  createDefaultCta,
+  createDefaultMobileStickyCta,
+  hasVisibleContactData,
+  isHttpUrl,
+  toTelHref,
+  toWhatsAppHref,
+  toMailto,
+  resolveCtaTarget,
+  resolveCtaLabel,
+  type ValidationIssue,
+  type CtaAction,
+} from '@/lib/contact-social'
 import type { Locale } from '@/lib/i18n'
 
 // ---------------------------------------------------------------------------
@@ -84,6 +123,13 @@ function normalizeConfig(config: WebsiteConfig): unknown {
         dataSource: s.dataSource,
       }))
       .sort((a, b) => a.sortOrder - b.sortOrder),
+    // Every new top-level field must be included. Omitting one would make
+    // configsEqual report a permanent difference for that field's edits, so
+    // `hasUnpublishedChanges` would never settle back to false.
+    contact: config.contact,
+    social: config.social,
+    cta: config.cta,
+    mobileStickyCta: config.mobileStickyCta,
   }
 }
 
@@ -134,6 +180,90 @@ const CONTENT_FIELD_LABELS: Record<string, { ar: string; en: string }> = {
 // Component
 // ---------------------------------------------------------------------------
 
+/**
+ * One contact/social field: a text input, a visibility toggle, an optional
+ * persistent hint, an optional advisory warning, and an optional server-issued
+ * validation error. Advisory warnings never block saving; server errors are
+ * shown only after a rejected write, and the input keeps its value.
+ */
+function ContactFieldRow({
+  rtl,
+  label,
+  hint,
+  warning,
+  issue,
+  value,
+  isVisible,
+  maxLength,
+  locale,
+  onValue,
+  onToggle,
+}: {
+  rtl: boolean
+  label: string
+  hint?: string
+  warning?: string
+  issue?: ValidationIssue
+  value: string
+  isVisible: boolean
+  maxLength: number
+  locale: 'ar' | 'en'
+  onValue: (v: string) => void
+  onToggle: () => void
+}) {
+  const overAdvisory = value.length > maxLength
+  return (
+    <div className="rounded-2xl border border-[#edf0f4] bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm font-semibold">{label}</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-xs text-ink-muted">
+            {isVisible ? (rtl ? 'ظاهر' : 'Visible') : (rtl ? 'مخفي' : 'Hidden')}
+          </span>
+          <button
+            type="button"
+            onClick={onToggle}
+            role="switch"
+            aria-checked={isVisible}
+            aria-label={label}
+            className={`relative h-6 w-11 rounded-full transition ${isVisible ? 'bg-brand-teal' : 'bg-gray-300'}`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
+                isVisible ? 'start-0.5' : 'end-0.5'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onValue(e.target.value)}
+        maxLength={maxLength}
+        dir="ltr"
+        className="mt-3 h-11 w-full rounded-xl border border-[#e1e5ed] bg-paper px-4 text-sm outline-none focus:border-brand-teal"
+      />
+
+      {hint && <p className="mt-1.5 text-[11px] text-ink-lighter">{hint}</p>}
+      {warning && <p className="mt-1.5 text-[11px] text-amber-700">{warning}</p>}
+      {overAdvisory && (
+        <p className="mt-1.5 text-[11px] text-amber-700">
+          {locale === 'ar'
+            ? 'الحقل أطول من المعتاد. قد لا يظهر بشكل جيد على الموقع.'
+            : 'This field is longer than usual and may not display well.'}
+        </p>
+      )}
+      {issue && (
+        <p className="mt-1.5 text-[11px] font-semibold text-red-600">
+          {VALIDATION_MESSAGES[issue.code][locale]}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function WebsiteEditor({
   locale,
   slug,
@@ -162,6 +292,19 @@ export function WebsiteEditor({
   const [publishStatus, setPublishStatus] = useState<'idle' | 'publishing' | 'published' | 'error'>('idle')
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+  /**
+   * Field-level validation issues returned by the server. Set on a failed save
+   * or publish and cleared on the next attempt. The editor's `config` state is
+   * deliberately NEVER replaced on failure, so the tenant's text stays on screen
+   * for correction.
+   */
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([])
+  const [generalError, setGeneralError] = useState<string | null>(null)
+
+  const issueFor = useCallback(
+    (field: string) => validationIssues.find((i) => i.field === field),
+    [validationIssues]
+  )
 
   // Determine if there are saved unpublished changes
   const hasUnpublishedChanges = !configsEqual(config, publishedConfig)
@@ -254,6 +397,68 @@ export function WebsiteEditor({
     [rtl, toast, updateTheme]
   )
 
+  // --- Collapsible section state (LOCAL only) ---
+  // Collapsing never discards inputs and never triggers Save/Publish/Discard.
+  // Initial states keep the editor from being overwhelmingly long on first
+  // open while still surfacing the two areas most tenants edit first.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    identity: true,
+    content: false,
+    // Services is a frequent, operational task, so it starts open.
+    services: true,
+    contact: true,
+    cta: false,
+    social: false,
+    sections: false,
+  })
+
+  const toggleAccordion = useCallback((key: string) => {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
+
+  // Show the general error banner (and point at the offending section) when the
+  // last failed write carried field-level issues, so a problem inside a
+  // collapsed section is never silently hidden.
+  const errorSection = validationIssues.length > 0 && !generalError
+    ? (validationIssues[0].field.startsWith('contact.')
+        ? 'contact'
+        : validationIssues[0].field.startsWith('social.')
+          ? 'social'
+          : validationIssues[0].field.startsWith('cta.')
+            ? 'cta'
+            : null)
+    : null
+  useEffect(() => {
+    if (!errorSection) return
+    setOpenSections((prev) => (prev[errorSection] ? prev : { ...prev, [errorSection]: true }))
+  }, [errorSection])
+
+  const accordion = useCallback(
+    (
+      key: string,
+      title: string,
+      description: string,
+      body: React.ReactNode,
+      preview?: React.ReactNode,
+      icon?: LucideIcon
+    ) => (
+      <AccordionSection
+        key={key}
+        locale={locale}
+        title={title}
+        description={description}
+        open={openSections[key]}
+        onToggle={() => toggleAccordion(key)}
+        preview={preview}
+        icon={icon}
+        testId={key}
+      >
+        {body}
+      </AccordionSection>
+    ),
+    [locale, openSections, toggleAccordion]
+  )
+
   // Preset selection — presentation-only, DRAFT only. Never publishes.
   // applyPreset preserves logo, section content, visibility and ordering.
   const selectedPresetId = detectPreset(config)
@@ -333,23 +538,81 @@ export function WebsiteEditor({
     [markChanged]
   )
 
+  // --- Contact / Social / CTA handlers (all DRAFT-only) --------------------
+
+  const updateContactField = useCallback(
+    (field: keyof WebsiteConfig['contact'], patch: { value?: string; isVisible?: boolean }) => {
+      setConfig((prev) => ({
+        ...prev,
+        contact: { ...prev.contact, [field]: { ...prev.contact[field], ...patch } },
+      }))
+      markChanged()
+    },
+    [markChanged]
+  )
+
+  const updateSocialLink = useCallback(
+    (platform: (typeof SOCIAL_PLATFORMS)[number], patch: { url?: string; isEnabled?: boolean }) => {
+      setConfig((prev) => ({
+        ...prev,
+        social: { ...prev.social, [platform]: { ...prev.social[platform], ...patch } },
+      }))
+      markChanged()
+    },
+    [markChanged]
+  )
+
+  const updateCta = useCallback(
+    (patch: Partial<WebsiteConfig['cta']>) => {
+      setConfig((prev) => ({ ...prev, cta: { ...prev.cta, ...patch } }))
+      markChanged()
+    },
+    [markChanged]
+  )
+
+  const updateCtaLabel = useCallback(
+    (loc: 'ar' | 'en', value: string) => {
+      setConfig((prev) => ({
+        ...prev,
+        cta: { ...prev.cta, label: { ...prev.cta.label, [loc]: value } },
+      }))
+      markChanged()
+    },
+    [markChanged]
+  )
+
+  const toggleMobileSticky = useCallback(() => {
+    setConfig((prev) => ({
+      ...prev,
+      mobileStickyCta: { ...prev.mobileStickyCta, isEnabled: !prev.mobileStickyCta.isEnabled },
+    }))
+    markChanged()
+  }, [markChanged])
+
   // Save draft
   const handleSaveDraft = useCallback(() => {
     setSaveStatus('saving')
+    setValidationIssues([])
+    setGeneralError(null)
     startTransition(async () => {
       try {
         const result = await saveDraft({ slug, locale, config })
         if (result.ok) {
           setSaveStatus('saved')
           setHasUnsavedChanges(false)
+          setValidationIssues([])
           toast('success', rtl ? 'تم حفظ المسودة بنجاح' : 'Draft saved successfully')
           router.refresh()
         } else {
+          // Failure: report it and keep the tenant's text exactly as typed.
           setSaveStatus('error')
+          if (result.errors?.length) setValidationIssues(result.errors)
+          setGeneralError(rtl ? 'تعذر حفظ المسودة' : 'Failed to save draft')
           toast('error', rtl ? 'تعذر حفظ المسودة' : 'Failed to save draft')
         }
       } catch {
         setSaveStatus('error')
+        setGeneralError(rtl ? 'تعذر حفظ المسودة' : 'Failed to save draft')
         toast('error', rtl ? 'تعذر حفظ المسودة' : 'Failed to save draft')
       }
     })
@@ -359,6 +622,8 @@ export function WebsiteEditor({
   const handlePublish = useCallback(() => {
     setShowPublishConfirm(false)
     setPublishStatus('publishing')
+    setValidationIssues([])
+    setGeneralError(null)
     startTransition(async () => {
       try {
         const result = await publishChanges({ slug, locale, config })
@@ -366,14 +631,26 @@ export function WebsiteEditor({
           setPublishStatus('published')
           setHasUnsavedChanges(false)
           setSaveStatus('idle')
+          setValidationIssues([])
           toast('success', rtl ? 'تم نشر التغييرات بنجاح' : 'Changes published successfully')
           router.refresh()
         } else {
           setPublishStatus('error')
-          toast('error', rtl ? 'تعذر النشر' : 'Failed to publish')
+          if (result.errors?.length) setValidationIssues(result.errors)
+          // A blocked publish is surfaced with the specific reason (e.g. the
+          // selected CTA action has no destination) rather than a generic error.
+          const message =
+            result.error === 'CTA_NO_DESTINATION'
+              ? (rtl
+                  ? 'لا يمكن النشر: الإجراء المحدد لا يملك وجهة صالحة. صحّح البيانات أو غيّر الإجراء.'
+                  : 'Cannot publish: the selected action has no valid destination. Fix the details or change the action.')
+              : (rtl ? 'تعذر النشر' : 'Failed to publish')
+          setGeneralError(message)
+          toast('error', message)
         }
       } catch {
         setPublishStatus('error')
+        setGeneralError(rtl ? 'تعذر النشر' : 'Failed to publish')
         toast('error', rtl ? 'تعذر النشر' : 'Failed to publish')
       }
     })
@@ -472,12 +749,69 @@ export function WebsiteEditor({
   // services included — because visibility and ordering are its job and always
   // have been.
   const servicesSection = editableSections.find((s) => s.type === 'services') ?? null
-  const contentSections = editableSections.filter((s) => s.type !== 'services')
+
+  // -------------------------------------------------------------------------
+  // Collapsed-section previews.
+  //
+  // Every value below is read from the LIVE editor state (`config`), never
+  // hardcoded, and never persisted. Each is presentational only.
+  // -------------------------------------------------------------------------
+
+  // Identity: the business name (tenant's) and the active primary color. The
+  // editor has no "business name" input — the name is the tenant's own.
+  const previewBusinessName = (tenant.name ?? '').trim()
+  const previewPrimaryColor = config.theme.primaryColor ?? '#0F766E'
+
+  // Hero: the current image, if one has been chosen.
+  const previewHeroImage = config.theme.heroImage ?? ''
+
+  // Contact: a concise count of the fields that are BOTH visible AND non-empty.
+  // Hidden or empty fields are never surfaced, matching the public renderer.
+  const previewContactFields: Array<{ key: string; label: string; value: string }> = (
+    [
+      { key: 'phone', label: rtl ? 'هاتف' : 'Phone', field: config.contact.phone },
+      { key: 'whatsapp', label: rtl ? 'واتساب' : 'WhatsApp', field: config.contact.whatsapp },
+      { key: 'email', label: rtl ? 'بريد' : 'Email', field: config.contact.email },
+      { key: 'address', label: rtl ? 'عنوان' : 'Address', field: config.contact.address },
+      {
+        key: 'maps',
+        label: rtl ? 'خرائط' : 'Maps',
+        field: config.contact.googleMapsUrl,
+      },
+    ] as const
+  )
+    .filter(({ field }) => field.isVisible && field.value.trim() !== '')
+    .map(({ key, label, field }) => ({ key, label, value: field.value.trim() }))
+
+  // Social: the platforms that are enabled AND carry a usable URL.
+  const previewSocialCount = SOCIAL_PLATFORMS.filter((p) => {
+    const link = config.social[p]
+    return link?.isEnabled && isHttpUrl(link.url)
+  }).length
+
+  // CTA: the selected action and the label that will actually render.
+  const previewCtaActionLabel =
+    config.cta.action === 'booking'
+      ? (rtl ? 'حجز موعد' : 'Book')
+      : config.cta.action === 'call'
+        ? (rtl ? 'اتصال' : 'Call')
+        : (rtl ? 'واتساب' : 'WhatsApp')
+  const previewCtaLabel = resolveCtaLabel(locale, config.cta, null)
 
   // Check if all renderable sections are hidden
   const allHidden = editableSections.length > 0 && editableSections.every((s) => !s.isVisible)
   // No renderable sections at all (e.g. every section removed).
   const noSections = editableSections.length === 0
+
+  // --- Contact / CTA derived state -----------------------------------------
+
+  const contactSection = editableSections.find((s) => s.type === 'contact') ?? null
+  // The Contact section is enabled but has nothing to show: the public site will
+  // omit it entirely, so the editor says so rather than letting the tenant
+  // publish an invisible section by surprise.
+  const contactEmptyWarning =
+    !!contactSection && contactSection.isVisible && !hasVisibleContactData(config.contact)
+  const ctaTarget = resolveCtaTarget(config.cta, config.contact)
 
   return (
     <div className="space-y-6">
@@ -583,6 +917,18 @@ export function WebsiteEditor({
         </div>
       </div>
 
+      {/* General (non-field) error from the last failed save/publish. The
+          tenant's edited values are still in state — nothing was discarded. */}
+      {generalError && (
+        <div
+          role="alert"
+          data-testid="editor-general-error"
+          className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          {generalError}
+        </div>
+      )}
+
       {/* All hidden warning */}
       {allHidden && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -602,11 +948,8 @@ export function WebsiteEditor({
       )}
 
       {/* Website Identity */}
-      <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
-        <h2 className="text-lg font-semibold">{rtl ? 'هوية الموقع' : 'Website Identity'}</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          {rtl ? 'تخصيص الألوان والشعار والمحتوى الرئيسي للموقع.' : 'Customize colors, logo, and main website content.'}
-        </p>
+      {accordion('identity', rtl ? 'هوية الموقع' : 'Website Identity', rtl ? 'تخصيص الألوان والشعار والمحتوى الرئيسي للموقع.' : 'Customize colors, logo, and main website content.', (
+        <>
 
         <div className="mt-6 space-y-6">
           {/* Theme presets — presentation-only bundles applied to the draft. */}
@@ -697,48 +1040,35 @@ export function WebsiteEditor({
             </label>
           </div>
 
-          {/* Logo */}
+          {/* Logo — one wide horizontal upload zone. The current logo is shown
+              inside the zone itself, so there is no separate thumbnail box. */}
           <div>
             <span className="mb-2 block text-xs font-semibold text-[#647087]">{rtl ? 'الشعار' : 'Logo'}</span>
-            <div className="flex items-center gap-5">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#e1e5ed] bg-surface">
-                {config.theme.logo ? (
-                  <img src={config.theme.logo} alt="Logo" className="h-full w-full object-contain" />
-                ) : (
-                  <span className="text-xs text-ink-lighter">id</span>
-                )}
-              </div>
-              <div>
-                <label className="cursor-pointer rounded-lg border border-[#e1e5ed] bg-paper px-3 py-1.5 text-xs font-semibold text-[#516078] transition hover:bg-surface">
-                  {rtl ? 'تغيير الشعار' : 'Change logo'}
-                  <input
-                    type="file"
-                    accept="image/png, image/jpeg, image/svg+xml"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (!file) return
-                      const reader = new FileReader()
-                      reader.onload = (event) => {
-                        if (typeof event.target?.result === 'string') {
-                          updateTheme('logo', event.target.result)
-                        }
-                      }
-                      reader.readAsDataURL(file)
-                    }}
-                  />
-                </label>
-                {config.theme.logo && (
-                  <button
-                    type="button"
-                    onClick={() => updateTheme('logo', '')}
-                    className="ms-2 text-xs text-red-600 hover:underline"
-                  >
-                    {rtl ? 'إزالة' : 'Remove'}
-                  </button>
-                )}
-              </div>
-            </div>
+            <ImageUploadZone
+              locale={locale}
+              title={config.theme.logo ? (rtl ? 'تغيير الشعار' : 'Change logo') : (rtl ? 'رفع شعار' : 'Upload logo')}
+              accept="image/png, image/jpeg, image/svg+xml"
+              maxSizeLabel="PNG · JPEG · SVG"
+              preview={config.theme.logo || undefined}
+              onFile={(file) => {
+                const reader = new FileReader()
+                reader.onload = (event) => {
+                  if (typeof event.target?.result === 'string') {
+                    updateTheme('logo', event.target.result)
+                  }
+                }
+                reader.readAsDataURL(file)
+              }}
+            />
+            {config.theme.logo && (
+              <button
+                type="button"
+                onClick={() => updateTheme('logo', '')}
+                className="mt-2 text-xs text-red-600 hover:underline"
+              >
+                {rtl ? 'إزالة الشعار' : 'Remove logo'}
+              </button>
+            )}
           </div>
 
           {/* Hero image — optional background image for the hero section */}
@@ -751,59 +1081,46 @@ export function WebsiteEditor({
                 ? 'صورة خلفية اختيارية للقسم الرئيسي. تُعرض بنص فوقها. الحد الأقصى 2 ميجابايت.'
                 : 'Optional background image for the hero section. Text is overlaid on top. Max 2MB.'}
             </p>
-            <div className="flex items-center gap-5">
-              {config.theme.heroImage ? (
-                <div className="h-20 w-36 shrink-0 overflow-hidden rounded-xl border border-[#e1e5ed] bg-surface">
-                  <img
-                    src={config.theme.heroImage}
-                    alt=""
-                    className="h-full w-full object-cover"
-                    style={{ objectPosition: focalPointToCss(config.theme.heroImageFocalPoint) }}
-                  />
-                </div>
-              ) : (
-                <div className="flex h-20 w-36 shrink-0 items-center justify-center rounded-xl border border-dashed border-[#e1e5ed] bg-surface">
-                  <span className="text-[10px] text-ink-lighter">{rtl ? 'لا توجد صورة' : 'No image'}</span>
-                </div>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="cursor-pointer rounded-lg border border-[#e1e5ed] bg-paper px-3 py-1.5 text-xs font-semibold text-[#516078] transition hover:bg-surface">
-                  {config.theme.heroImage
-                    ? (rtl ? 'تغيير الصورة' : 'Change image')
-                    : (rtl ? 'رفع صورة' : 'Upload image')}
-                  <input
-                    type="file"
-                    accept="image/png, image/jpeg, image/webp"
-                    className="hidden"
-                    onChange={handleHeroImageChange}
-                  />
-                </label>
-                {config.theme.heroImage && (
-                  <button
-                    type="button"
-                    // Clear the focal point and opacity alongside the image, so
-                    // removing the image cannot leave stale crop/opacity state
-                    // to be applied to whatever is uploaded next.
-                    onClick={() => {
-                      setConfig((prev) => ({
-                        ...prev,
-                        theme: {
-                          ...prev.theme,
-                          heroImage: undefined,
-                          heroImageFocalPoint: undefined,
-                          heroImageCrop: undefined,
-                          heroImageOpacity: undefined,
-                        },
-                      }))
-                      markChanged()
-                    }}
-                    className="text-xs text-red-600 hover:underline"
-                  >
-                    {rtl ? 'إزالة' : 'Remove'}
-                  </button>
-                )}
-              </div>
-            </div>
+            {/* One wide horizontal zone. The current hero image (with its focal
+                point applied) is shown inside the zone itself. */}
+            <ImageUploadZone
+              locale={locale}
+              title={
+                config.theme.heroImage
+                  ? (rtl ? 'تغيير الصورة' : 'Change image')
+                  : (rtl ? 'رفع صورة' : 'Upload image')
+              }
+              accept="image/png, image/jpeg, image/webp"
+              maxSizeLabel="PNG · JPEG · WebP · 2MB"
+              preview={config.theme.heroImage || undefined}
+              previewFit="cover"
+              previewStyle={{ objectPosition: focalPointToCss(config.theme.heroImageFocalPoint) }}
+              onFile={(file) => handleHeroImageChange({ target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>)}
+            />
+            {config.theme.heroImage && (
+              <button
+                type="button"
+                // Clear the focal point and opacity alongside the image, so
+                // removing the image cannot leave stale crop/opacity state
+                // to be applied to whatever is uploaded next.
+                onClick={() => {
+                  setConfig((prev) => ({
+                    ...prev,
+                    theme: {
+                      ...prev.theme,
+                      heroImage: undefined,
+                      heroImageFocalPoint: undefined,
+                      heroImageCrop: undefined,
+                      heroImageOpacity: undefined,
+                    },
+                  }))
+                  markChanged()
+                }}
+                className="mt-2 text-xs text-red-600 hover:underline"
+              >
+                {rtl ? 'إزالة الصورة' : 'Remove image'}
+              </button>
+            )}
 
             {/* Crop — opens the cropper at the hero band's aspect ratio. */}
             {config.theme.heroImage && (
@@ -856,23 +1173,48 @@ export function WebsiteEditor({
             )}
           </div>
         </div>
-      </div>
+        </>
+        ), (
+        <>
+        {previewBusinessName && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-semibold text-[#516078]">{previewBusinessName}</span>
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            className="h-3.5 w-3.5 shrink-0 rounded-full border border-black/10"
+            style={{ backgroundColor: previewPrimaryColor }}
+            aria-hidden="true"
+          />
+          <span className="font-mono" dir="ltr">
+            {previewPrimaryColor}
+          </span>
+        </span>
+        {previewHeroImage && (
+          <span className="inline-flex items-center gap-1.5">
+            <img
+              src={previewHeroImage}
+              alt=""
+              className="h-6 w-10 rounded object-cover"
+              aria-hidden="true"
+            />
+            <span>{rtl ? 'صورة رئيسية' : 'Hero image'}</span>
+          </span>
+        )}
+        </>
+        ), Palette)}
 
       {/* Section Content — driven by SECTION_CONTENT_FIELDS so the editor and
           renderer always agree on which fields are editable.
           The Services section's text is NOT here: it lives in the Services area
           below, beside the service list it describes. Every other renderable
           section is listed here exactly as before. */}
-      <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
-        <h2 className="text-lg font-semibold">{rtl ? 'محتوى الأقسام' : 'Section Content'}</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          {rtl
-            ? 'عدّل النصوص الظاهرة في كل قسم. اترك الحقل فارغاً لاستخدام النص الافتراضي.'
-            : 'Edit the text shown in each section. Leave a field empty to use the default text.'}
-        </p>
+      {accordion('content', rtl ? 'محتوى الأقسام' : 'Section Content', rtl ? 'عدّل النصوص الظاهرة في كل قسم. اترك الحقل فارغاً لاستخدام النص الافتراضي.' : 'Edit the text shown in each section. Leave a field empty to use the default text.', (
+        <>
 
         <div className="mt-6 space-y-8">
-          {contentSections
+          {editableSections
             .slice()
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((section) => {
@@ -994,31 +1336,321 @@ export function WebsiteEditor({
               )
             })}
         </div>
-      </div>
+        </>
+      ), (
+        <span>
+          {rtl
+            ? `${editableSections.length} قسم قابل للتعديل`
+            : `${editableSections.length} editable section${editableSections.length === 1 ? '' : 's'}`}
+        </span>
+      ), FileText)}
 
-      {/* THE Services area — section text, the service list with prices, and
-          each service's image. Sits after Section Management, matching the
-          intended hierarchy: the generic section controls, then the section
-          that needs richer management. */}
-      {servicesSection && (
-        <ServicesSection
-          locale={locale}
-          slug={slug}
-          sectionId={servicesSection.id}
-          content={servicesSection.content ?? null}
-          services={services}
-          onUpdateContent={updateSectionContent}
-          onResetContent={resetSectionContent}
-        />
-      )}
+      {/* خدماتك — Services management in its OWN top-level accordion, using the
+          shared AccordionSection. The Services section's TEXT is edited in
+          محتوى الأقسام above; this accordion owns the service list, prices,
+          durations and per-service images. Not nested inside any other section. */}
+      {servicesSection &&
+        accordion('services', rtl ? 'خدماتك' : 'Your Services', rtl ? 'قائمة خدماتك مع الأسعار والمدة وصور كل خدمة. تُحفظ فوراً.' : 'Your service list with prices, duration and each service’s image. Saves immediately.', (
+          <div className="mt-6">
+            <ServicesSection locale={locale} slug={slug} services={services} />
+          </div>
+        ), (
+          <span>
+            {services.length > 0
+              ? (rtl ? `${services.length} خدمة` : `${services.length} service${services.length === 1 ? '' : 's'}`)
+              : (rtl ? 'لا توجد خدمات بعد' : 'No services yet')}
+          </span>
+        ), BriefcaseBusiness)}
 
-      {/* Section Management — restored to its original interface: every
-          renderable section, with visibility, ordering and remove. */}
-      <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
-        <h2 className="text-lg font-semibold">{rtl ? 'إدارة الأقسام' : 'Section Management'}</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          {rtl ? 'التحكم في ظهور الأقسام وترتيبها في الموقع.' : 'Control which sections appear and their order on the website.'}
-        </p>
+        {/* Contact Information — managed independently of the tenant profile
+          fields, per the product contract. Each field has its own visibility
+          toggle; hidden or empty fields render nothing on the public site. */}
+      {accordion('contact', rtl ? 'معلومات الاتصال' : 'Contact Information', rtl ? 'بيانات الاتصال الظاهرة في قسم "تواصل معنا" وفي التذييل. كل حقل مستقل ويمكن إخفاؤه.' : 'The contact details shown in the Contact section and the footer. Each field is independent and can be hidden.', (
+        <>
+
+        {contactEmptyWarning && (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            {CONTACT_EMPTY_WARNING[locale]}
+          </div>
+        )}
+
+        <div className="mt-6 space-y-5">
+          {/* Phone */}
+          <ContactFieldRow
+            rtl={rtl}
+            label={rtl ? 'رقم الهاتف' : 'Phone number'}
+            hint={PHONE_FORMAT_HINT[locale]}
+            value={config.contact.phone.value}
+            isVisible={config.contact.phone.isVisible}
+            maxLength={CONTACT_PRACTICAL_LIMITS.phone}
+            warning={
+              config.contact.phone.value.trim() !== '' && !toTelHref(config.contact.phone.value)
+                ? PHONE_INVALID_HINT[locale]
+                : undefined
+            }
+            issue={issueFor('contact.phone.value')}
+            locale={locale}
+            onValue={(v) => updateContactField('phone', { value: v })}
+            onToggle={() => updateContactField('phone', { isVisible: !config.contact.phone.isVisible })}
+          />
+
+          {/* WhatsApp */}
+          <ContactFieldRow
+            rtl={rtl}
+            label={rtl ? 'رقم واتساب' : 'WhatsApp number'}
+            hint={PHONE_FORMAT_HINT[locale]}
+            value={config.contact.whatsapp.value}
+            isVisible={config.contact.whatsapp.isVisible}
+            maxLength={CONTACT_PRACTICAL_LIMITS.whatsapp}
+            warning={
+              config.contact.whatsapp.value.trim() !== '' && !toWhatsAppHref(config.contact.whatsapp.value)
+                ? PHONE_INVALID_HINT[locale]
+                : undefined
+            }
+            issue={issueFor('contact.whatsapp.value')}
+            locale={locale}
+            onValue={(v) => updateContactField('whatsapp', { value: v })}
+            onToggle={() => updateContactField('whatsapp', { isVisible: !config.contact.whatsapp.isVisible })}
+          />
+
+          {/* Email */}
+          <ContactFieldRow
+            rtl={rtl}
+            label={rtl ? 'البريد الإلكتروني' : 'Email address'}
+            value={config.contact.email.value}
+            isVisible={config.contact.email.isVisible}
+            maxLength={CONTACT_PRACTICAL_LIMITS.email}
+            warning={
+              config.contact.email.value.trim() !== '' && !toMailto(config.contact.email.value)
+                ? (rtl ? 'صيغة البريد الإلكتروني غير صحيحة.' : 'Invalid email address.')
+                : undefined
+            }
+            issue={issueFor('contact.email.value')}
+            locale={locale}
+            onValue={(v) => updateContactField('email', { value: v })}
+            onToggle={() => updateContactField('email', { isVisible: !config.contact.email.isVisible })}
+          />
+
+          {/* Address */}
+          <ContactFieldRow
+            rtl={rtl}
+            label={rtl ? 'العنوان' : 'Business address'}
+            value={config.contact.address.value}
+            isVisible={config.contact.address.isVisible}
+            maxLength={CONTACT_PRACTICAL_LIMITS.address}
+            issue={issueFor('contact.address.value')}
+            locale={locale}
+            onValue={(v) => updateContactField('address', { value: v })}
+            onToggle={() => updateContactField('address', { isVisible: !config.contact.address.isVisible })}
+          />
+
+          {/* Google Maps */}
+          <ContactFieldRow
+            rtl={rtl}
+            label={rtl ? 'رابط خرائط جوجل' : 'Google Maps link'}
+            value={config.contact.googleMapsUrl.value}
+            isVisible={config.contact.googleMapsUrl.isVisible}
+            maxLength={CONTACT_PRACTICAL_LIMITS.googleMapsUrl}
+            warning={
+              config.contact.googleMapsUrl.value.trim() !== '' &&
+              !isHttpUrl(config.contact.googleMapsUrl.value)
+                ? URL_INVALID_HINT[locale]
+                : undefined
+            }
+            issue={issueFor('contact.googleMapsUrl.value')}
+            locale={locale}
+            onValue={(v) => updateContactField('googleMapsUrl', { value: v })}
+            onToggle={() =>
+              updateContactField('googleMapsUrl', { isVisible: !config.contact.googleMapsUrl.isVisible })
+            }
+          />
+        </div>
+        </>
+      ), (
+        previewContactFields.length > 0 ? (
+          <>
+            {previewContactFields.map((f) => (
+              <span key={f.key} className="inline-flex items-center gap-1">
+                <span className="text-[#929bad]">{f.label}:</span>
+                <span className="break-all" dir="ltr">
+                  {f.value}
+                </span>
+              </span>
+            ))}
+          </>
+        ) : (
+          <span className="text-[#929bad]">
+            {rtl ? 'لا توجد بيانات اتصال ظاهرة' : 'No visible contact details'}
+          </span>
+        )
+      ), Contact)}
+
+      {/* Social Links — the four fixed platforms only. */}
+      {accordion('social', rtl ? 'روابط التواصل' : 'Social Links', rtl ? 'روابط حساباتك على المنصات المدعومة. تُعرض في قسم التواصل والترويسة والتذييل.' : 'Your profiles on the supported platforms. Shown in the Contact section, header and footer.', (
+        <>
+
+        <div className="mt-6 space-y-5">
+          {SOCIAL_PLATFORMS.map((platform) => {
+            const labels: Record<string, { ar: string; en: string }> = {
+              instagram: { ar: 'إنستغرام', en: 'Instagram' },
+              facebook: { ar: 'فيسبوك', en: 'Facebook' },
+              tiktok: { ar: 'تيك توك', en: 'TikTok' },
+              youtube: { ar: 'يوتيوب', en: 'YouTube' },
+            }
+            const link = config.social[platform]
+            return (
+              <ContactFieldRow
+                key={platform}
+                rtl={rtl}
+                label={labels[platform][locale]}
+                value={link.url}
+                isVisible={link.isEnabled}
+                maxLength={CONTACT_PRACTICAL_LIMITS.socialUrl}
+                warning={
+                  link.url.trim() !== '' && !isHttpUrl(link.url) ? URL_INVALID_HINT[locale] : undefined
+                }
+                issue={issueFor(`social.${platform}.url`)}
+                locale={locale}
+                onValue={(v) => updateSocialLink(platform, { url: v })}
+                onToggle={() => updateSocialLink(platform, { isEnabled: !link.isEnabled })}
+              />
+            )
+          })}
+        </div>
+        </>
+      ), (
+        previewSocialCount > 0 ? (
+          <span>
+            {rtl
+              ? `${previewSocialCount} منصة مُفعّلة`
+              : `${previewSocialCount} platform${previewSocialCount === 1 ? '' : 's'} enabled`}
+          </span>
+        ) : (
+          <span className="text-[#929bad]">{rtl ? 'لا توجد منصات مُفعّلة' : 'No platforms enabled'}</span>
+        )
+      ), Share2)}
+
+      {/* Primary CTA + Mobile Sticky CTA */}
+      {accordion('cta', rtl ? 'زر الإجراء الرئيسي' : 'Primary Call-to-Action', rtl ? 'حدد الإجراء الذي يقوم به الزر الرئيسي في الموقع، ونصّه بالعربية والإنجليزية.' : 'Choose what the website’s main button does, and its Arabic and English text.', (
+        <>
+
+        <div className="mt-6 space-y-6">
+          <div>
+            <span className="mb-2 block text-xs font-semibold text-[#647087]">
+              {rtl ? 'الإجراء' : 'Action'}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {CTA_ACTIONS.map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  onClick={() => updateCta({ action })}
+                  aria-pressed={config.cta.action === action}
+                  className={`rounded-xl border px-4 py-2 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 ${
+                    config.cta.action === action
+                      ? 'border-brand-teal bg-surface text-brand-teal'
+                      : 'border-[#e1e5ed] bg-paper text-[#516078] hover:border-brand-teal/60'
+                  }`}
+                >
+                  {action === 'booking'
+                    ? (rtl ? 'حجز موعد' : 'Book')
+                    : action === 'call'
+                      ? (rtl ? 'اتصال' : 'Call')
+                      : (rtl ? 'واتساب' : 'WhatsApp')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Destination warning, specific to the selected action. Never a
+              fallback: the CTA simply will not render until it is valid. */}
+          {config.cta.action !== 'booking' && ctaTarget.kind === 'none' && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              {CTA_WARNINGS[config.cta.action as Exclude<CtaAction, 'booking'>][locale]}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-semibold text-[#647087]">
+                {rtl ? 'نص الزر (عربي)' : 'Button text (Arabic)'}
+              </span>
+              <input
+                type="text"
+                value={config.cta.label.ar}
+                onChange={(e) => updateCtaLabel('ar', e.target.value)}
+                maxLength={CONTACT_PRACTICAL_LIMITS.ctaLabel}
+                placeholder="احجز موعداً"
+                dir="rtl"
+                className="mt-2 h-11 w-full rounded-xl border border-[#e1e5ed] bg-paper px-4 text-sm outline-none focus:border-brand-teal"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-[#647087]">
+                {rtl ? 'نص الزر (إنجليزي)' : 'Button text (English)'}
+              </span>
+              <input
+                type="text"
+                value={config.cta.label.en}
+                onChange={(e) => updateCtaLabel('en', e.target.value)}
+                maxLength={CONTACT_PRACTICAL_LIMITS.ctaLabel}
+                placeholder="Book an appointment"
+                dir="ltr"
+                className="mt-2 h-11 w-full rounded-xl border border-[#e1e5ed] bg-paper px-4 text-sm outline-none focus:border-brand-teal"
+              />
+            </label>
+          </div>
+          <p className="text-xs text-ink-lighter">
+            {rtl
+              ? 'اترك النص فارغاً لاستخدام نص قسم البطل أو النص الافتراضي.'
+              : 'Leave empty to use the hero section\u2019s button text or the default.'}
+          </p>
+
+          {/* Mobile sticky CTA */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#edf0f4] bg-surface p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{rtl ? 'زر ثابت للجوال' : 'Mobile sticky CTA'}</p>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {rtl
+                  ? 'يظهر شريط الزر في أسفل الشاشة على الجوال فقط، بنفس إجراء الزر الرئيسي.'
+                  : 'Shows the button bar at the bottom of the screen on mobile only, using the same action as the primary CTA.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleMobileSticky}
+              role="switch"
+              aria-checked={config.mobileStickyCta.isEnabled}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                config.mobileStickyCta.isEnabled ? 'bg-brand-teal' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
+                  config.mobileStickyCta.isEnabled ? 'start-0.5' : 'end-0.5'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+        </>
+      ), (
+        <>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-[#929bad]">{rtl ? 'الإجراء:' : 'Action:'}</span>
+            <span className="font-semibold text-[#516078]">{previewCtaActionLabel}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-[#929bad]">{rtl ? 'النص:' : 'Label:'}</span>
+            <span className="break-words text-[#516078]">{previewCtaLabel}</span>
+          </span>
+        </>
+      ), MousePointerClick)}
+
+
+      {/* Section Management — visibility, ordering and removal. */}
+        {accordion('sections', rtl ? 'إدارة الأقسام' : 'Section Management', rtl ? 'التحكم في ظهور الأقسام وترتيبها في الموقع.' : 'Control which sections appear and their order on the website.', (
+        <>
 
         <div className="mt-6 space-y-3">
           {editableSections
@@ -1097,7 +1729,14 @@ export function WebsiteEditor({
               )
             })}
         </div>
-      </div>
+        </>
+      ), (
+        <span>
+          {rtl
+            ? `${editableSections.filter((s) => s.isVisible).length} من ${editableSections.length} ظاهرة`
+            : `${editableSections.filter((s) => s.isVisible).length} of ${editableSections.length} visible`}
+        </span>
+      ), LayoutGrid)}
 
       {/* Hero image cropper — modal, opened from the Hero image controls.
           Cancel leaves the previous image AND crop untouched. */}

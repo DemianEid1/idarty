@@ -1,10 +1,22 @@
 import Link from 'next/link'
-import { ArrowRight, CalendarDays, Clock3, MapPin, Phone, Sparkles } from 'lucide-react'
+import { ArrowRight, CalendarDays, Clock3, Mail, MapPin, Phone, Sparkles } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
 import { resolveOrderedSectionTypes, resolveSiteBackground, type WebsiteConfig } from '@/lib/website-config'
 import { focalPointToCss, resolveFocalPoint, type FocalPoint } from '@/lib/image-focal-point'
 import { cropToLayerStyle, resolveCrop } from '@/lib/image-crop'
 import { LogoIcon } from '@/components/logo'
+import {
+  isHttpUrl,
+  resolveCtaTarget,
+  resolveCtaLabel,
+  resolveVisibleSocialLinks,
+  toTelHref,
+  toMailto,
+  FALLBACK_CTA_LABEL,
+} from '@/lib/contact-social'
+import { ContactSection } from '@/components/contact-section'
+import { MobileStickyCta } from '@/components/mobile-sticky-cta'
+import { SocialLinks, WhatsAppLink } from '@/components/social-links'
 
 // ---------------------------------------------------------------------------
 // Shared tenant website renderer.
@@ -144,7 +156,59 @@ export function TenantWebsite({
     (translation?.description ?? (rtl ? 'اختر الخدمة والوقت المناسبين لك.' : 'Choose a service and a time that works for you.'))
   const businessAddress = translation?.address ?? null
   const businessPhone = tenant.phoneE164 ?? null
-  const ctaLabel = rtl ? (heroAr.ctaLabel || 'احجز موعداً') : (heroEn.ctaLabel || 'Book an appointment')
+
+  // -------------------------------------------------------------------------
+  // Contact & Social settings.
+  //
+  // `config` is the DRAFT config on the preview route and the PUBLISHED config
+  // on the public route, so every value below is already correctly scoped.
+  // -------------------------------------------------------------------------
+  const contactConfig = config?.contact ?? null
+  const socialConfig = config?.social ?? null
+  const ctaConfig = config?.cta ?? null
+  const stickyEnabled = config?.mobileStickyCta?.isEnabled ?? false
+
+  // The Main CTA destination. `booking` always resolves; `call`/`whatsapp`
+  // resolve only with a visible, valid destination — never a fallback action.
+  const ctaTarget = resolveCtaTarget(ctaConfig, contactConfig ?? {
+    phone: { value: '', isVisible: false },
+    whatsapp: { value: '', isVisible: false },
+    email: { value: '', isVisible: false },
+    address: { value: '', isVisible: false },
+    googleMapsUrl: { value: '', isVisible: false },
+  })
+  // The Main CTA is INDEPENDENT of the hero. Its label is resolved from the CTA
+  // configuration alone — the hero's legacy `ctaLabel` is deliberately NOT
+  // passed as a fallback, so editing one can never change the other.
+  const primaryCtaLabel = resolveCtaLabel(locale, ctaConfig, null)
+  const showPrimaryCta = ctaTarget.kind !== 'none'
+  const primaryCtaHref =
+    ctaTarget.kind === 'href'
+      ? ctaTarget.href
+      : `/${locale}/tenants/${slug}/book`
+  const primaryCtaIsExternal = ctaTarget.kind === 'href' && isHttpUrl(ctaTarget.href)
+  const stickyVisible = stickyEnabled && showPrimaryCta
+
+  // -------------------------------------------------------------------------
+  // The HERO's own booking button.
+  //
+  // It ALWAYS points at the tenant's booking route and NEVER consults the Main
+  // CTA configuration. Before this split the hero reused `primaryCtaHref` /
+  // `primaryCtaLabel`, so choosing "Call" or "WhatsApp" in Website Builder
+  // silently repointed — or, with an invalid destination, removed — the hero's
+  // booking action. Its label is the hero section's own `ctaLabel` content
+  // field (so existing tenants keep their text) falling back to the standard
+  // booking label; no new configuration field is introduced.
+  // -------------------------------------------------------------------------
+  const heroBookingHref = `/${locale}/tenants/${slug}/book`
+  const heroBookingLabel =
+    (rtl ? heroAr.ctaLabel : heroEn.ctaLabel)?.trim() || FALLBACK_CTA_LABEL[locale]
+
+  const socialLinks = resolveVisibleSocialLinks(socialConfig)
+  // The resolved list drives the footer's "has any social link" decision. The
+  // SocialLinks component re-resolves internally for rendering, so this only
+  // guards layout.
+  const hasSocialLinks = socialLinks.length > 0
 
   // Optional Hero background image (base64 data URL). When present, the hero
   // section renders it as a background image with the existing text overlaid
@@ -200,6 +264,53 @@ export function TenantWebsite({
   const showServices = isVisible('services')
 
   // -------------------------------------------------------------------------
+  // Footer contact layer.
+  //
+  // Visibility rules mirror the Contact section, with ONE extra subtlety for
+  // the address: when the current configuration does not define an address, the
+  // legacy translation address is shown (the pre-existing behaviour). But an
+  // address explicitly HIDDEN in the configuration is never revealed.
+  // -------------------------------------------------------------------------
+  const configuredAddress = contactConfig?.address ?? null
+  const addressVisible = !!configuredAddress?.isVisible && configuredAddress.value.trim() !== ''
+  const addressConfigured = !!configuredAddress && configuredAddress.value.trim() !== ''
+  // Shown when: explicitly visible+non-empty, OR not configured at all (legacy
+  // fallback). Never when configured but hidden.
+  const footerAddress = addressVisible
+    ? configuredAddress!.value.trim()
+    : !addressConfigured
+      ? businessAddress
+      : null
+
+  const footerPhoneValue = contactConfig?.phone.isVisible ? contactConfig.phone.value.trim() : ''
+  const footerEmailValue = contactConfig?.email.isVisible ? contactConfig.email.value.trim() : ''
+  const footerPhoneHref = contactConfig?.phone.isVisible ? toTelHref(contactConfig.phone.value) : null
+  const footerEmailHref = contactConfig?.email.isVisible ? toMailto(contactConfig.email.value) : null
+  // The address opens the configured Google Maps URL when one is valid;
+  // otherwise it stays plain text. Never constructed from the address itself.
+  const footerMapsHref =
+    contactConfig?.googleMapsUrl.isVisible && isHttpUrl(contactConfig.googleMapsUrl.value)
+      ? contactConfig.googleMapsUrl.value.trim()
+      : null
+
+  const footerContactItems = [
+    footerAddress
+      ? {
+          key: 'address',
+          icon: MapPin,
+          label: rtl ? 'العنوان' : 'Address',
+          value: footerAddress,
+          href: footerMapsHref,
+          external: !!footerMapsHref,
+        }
+      : null,
+    footerPhoneValue ? { key: 'phone', icon: Phone, label: rtl ? 'الهاتف' : 'Phone', value: footerPhoneValue, href: footerPhoneHref, external: false } : null,
+    footerEmailValue ? { key: 'email', icon: Mail, label: rtl ? 'البريد الإلكتروني' : 'Email', value: footerEmailValue, href: footerEmailHref, external: false } : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null)
+
+  const footerYear = new Date().getFullYear()
+
+  // -------------------------------------------------------------------------
   // Section renderers
   // -------------------------------------------------------------------------
   const renderHero = () => (
@@ -213,7 +324,15 @@ export function TenantWebsite({
       // `relative` + `overflow-hidden` are applied ONLY when an image is
       // present; with no image the class list stays the historical text-only
       // hero so existing sites cannot regress.
-      className={heroImage ? 'relative w-full overflow-hidden' : 'w-full'}
+      //
+      // A responsive MINIMUM height (never a fixed height) gives the hero
+      // deliberate proportions while still growing naturally when the localized
+      // heading/description/CTA need more room. It is applied ONLY when a
+      // background image exists, so a text-only hero never becomes a large
+      // empty band.
+      className={`${heroImage ? 'relative w-full overflow-hidden' : 'w-full'} flex flex-col ${
+        heroImage ? 'min-h-[56vh] sm:min-h-[60vh] lg:min-h-[55vh]' : ''
+      }`}
     >
       {heroImage && (
         // Opacity is applied to this IMAGE WRAPPER ONLY (it contains nothing but
@@ -228,6 +347,17 @@ export function TenantWebsite({
               <img
                 src={heroImage}
                 alt=""
+                // This is the primary above-the-fold image, so it is loaded with
+                // high priority instead of being deferred. The service-card
+                // images below keep `loading="lazy"`.
+                //
+                // The hero source is a base64 `data:` URL, which the browser
+                // already has inline — there is no network request to prioritise,
+                // and `fetchPriority` is a no-op here rather than a regression.
+                // It is set so the markup stays correct if a remote hero source
+                // is ever introduced.
+                fetchPriority="high"
+                decoding="async"
                 className="h-full w-full object-cover"
                 style={{ maxWidth: 'none' }}
               />
@@ -248,72 +378,81 @@ export function TenantWebsite({
         </div>
       )}
 
-      {/* Readability overlay — a soft gradient that darkens only the area behind
-          the text, so the image keeps its natural colours and contrast
-          everywhere else. (It previously used a flat `bg-white/80`, which
-          washed the whole image out even at 100% opacity.) It is a separate
-          element, so the image's own opacity never affects it. */}
+      {/* Improved readability overlay — a stronger multi-stop gradient that
+          ensures legible text across all image types. The bottom gets maximum
+          darkening while the top retains the image's character. Separate from
+          the image layer so the image opacity never affects text contrast. */}
       {heroImage && (
         <div
           aria-hidden="true"
-          className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/20 to-transparent"
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.38) 45%, rgba(0,0,0,0.10) 100%)',
+          }}
         />
       )}
 
-      {/* Content container — matches the site's normal readable width. */}
-      <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24 lg:py-28">
+      {/* Content container — matches the site's normal readable width.
+          `flex-1` + `justify-center` vertically centre the content inside the
+          hero's minimum height while still allowing the section to grow when the
+          localized text needs more room. */}
+      <div className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 py-10 sm:px-6 sm:py-16 lg:py-20">
         <div className="max-w-2xl">
           <p
             className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-semibold break-words"
             style={
               heroImage
-                ? { color: '#fff', borderColor: 'rgba(255,255,255,0.6)', backgroundColor: 'rgba(0,0,0,0.25)' }
+                ? { color: '#fff', borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(0,0,0,0.32)' }
                 : { color: 'var(--site-primary)', borderColor: 'var(--site-primary)' }
             }
           >
-            <Sparkles className="h-5 w-5 shrink-0" />
+            <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
             {businessTagline}
           </p>
           <h1
-            className="mt-4 text-[2.5rem] font-bold tracking-tight break-words sm:text-[3.5rem] lg:text-[4.25rem]"
-            style={heroImage ? { color: '#fff' } : undefined}
+            className="mt-4 text-[2.25rem] font-bold tracking-tight break-words sm:text-[3.25rem] lg:text-[4rem] leading-[1.15]"
+            style={heroImage ? { color: '#fff', textShadow: '0 2px 12px rgba(0,0,0,0.25)' } : undefined}
           >
             {businessName}
           </h1>
           <p
-            className="mt-5 max-w-xl text-lg leading-8 break-words sm:text-xl sm:leading-9"
-            style={{ color: heroImage ? 'rgba(255,255,255,0.92)' : '#6f7b90' }}
+            className="mt-4 max-w-xl text-base leading-7 break-words sm:text-lg sm:leading-8"
+            style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : '#6f7b90' }}
           >
             {businessDescription}
           </p>
           <div
-            className="mt-7 flex flex-wrap gap-4 text-base"
-            style={{ color: heroImage ? 'rgba(255,255,255,0.88)' : '#748096' }}
+            className="mt-5 flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:gap-x-5 sm:gap-y-2"
+            style={{ color: heroImage ? 'rgba(255,255,255,0.85)' : '#748096' }}
           >
             {businessAddress && (
               <span className="flex items-center gap-2 break-words">
-                <MapPin className="h-5 w-5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+                <MapPin className="h-4 w-4 shrink-0" style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : 'var(--site-primary)' }} aria-hidden="true" />
                 {businessAddress}
               </span>
             )}
             <span className="flex items-center gap-2">
-              <Clock3 className="h-5 w-5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
+              <Clock3 className="h-4 w-4 shrink-0" style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : 'var(--site-primary)' }} aria-hidden="true" />
               {hoursLabel}
             </span>
             {businessPhone && (
               <span className="flex items-center gap-2 break-words">
-                <Phone className="h-5 w-5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} />
-                {businessPhone}
+                <Phone className="h-4 w-4 shrink-0" style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : 'var(--site-primary)' }} aria-hidden="true" />
+                <span dir="ltr">{businessPhone}</span>
               </span>
             )}
           </div>
+          {/* Hero's OWN booking button. Always the booking route, never the
+              configurable Main CTA. Compact and rounded, not full-width, so it
+              stays aligned with the hero's left-aligned content on desktop. */}
           <Link
-            href={`/${locale}/tenants/${slug}/book`}
-            className="mt-8 inline-flex max-w-full items-center gap-2 rounded-xl px-7 py-3.5 text-base font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
+            href={heroBookingHref}
+            data-testid="hero-booking-cta"
+            className="mt-7 inline-flex max-w-full items-center gap-2 rounded-xl px-6 py-3.5 text-base font-semibold text-white shadow-md transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:-translate-y-px active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
             style={{ backgroundColor: 'var(--site-primary)' }}
           >
-            <span className="break-words">{ctaLabel}</span>
-            <ArrowRight className="h-5 w-5 shrink-0" />
+            <span className="break-words">{heroBookingLabel}</span>
+            <ArrowRight className="h-5 w-5 shrink-0 rtl:rotate-180" aria-hidden="true" />
           </Link>
         </div>
       </div>
@@ -326,29 +465,31 @@ export function TenantWebsite({
       id="services"
       className="border-t border-[#eef0f4]"
     >
-      <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-24">
+      <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:py-24">
         {serviceRows.length > 0 ? (
           <>
             <div className="mb-10 text-center">
-              <h2 className="text-3xl font-bold tracking-tight break-words sm:text-4xl">
+              <h2 className="text-2xl font-bold tracking-tight break-words sm:text-3xl lg:text-4xl">
                 {servicesHeading}
               </h2>
-              <p className="mt-2 text-base text-[#6f7b90] break-words">
+              <p className="mt-3 text-base text-[#6f7b90] break-words max-w-lg mx-auto">
                 {servicesDescription}
               </p>
             </div>
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Mobile: horizontal cards (thumbnail beside the text).
+                `sm` and above: vertical cards (image spans the card width).
+                ONE card tree — the layout is driven purely by responsive CSS. */}
+            <div className="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {serviceRows.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex min-w-0 flex-col rounded-2xl border border-[#e6eaf1] bg-paper shadow-sm transition hover:shadow-md"
+                  className="group flex min-w-0 flex-row rounded-2xl border border-[#e6eaf1] bg-paper shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 sm:flex-col"
                 >
-                  {/* ONE consistent image area for EVERY card, image or not, so a
-                      business with only some services photographed still gets a
-                      tidy grid: same height, same rhythm, no short cards.
-                      `aspect-[16/10]` matches CROP_ASPECTS.service, which is the
+                  {/* The ONE image area per card. On mobile it is a fixed square
+                      thumbnail (96×96); from `sm` up it becomes the card's
+                      full-width 16:10 band, matching CROP_ASPECTS.service — the
                       ratio the cropper frames. */}
-                  <div className="relative aspect-[16/10] w-full shrink-0 overflow-hidden rounded-t-2xl bg-[#f0f2f5]">
+                  <div className="relative w-[110px] shrink-0 self-stretch overflow-hidden rounded-s-2xl bg-[#f0f2f5] sm:aspect-[16/10] sm:w-full sm:self-auto sm:rounded-t-2xl sm:rounded-s-none">
                     {item.image ? (
                       item.cropLayer ? (
                         // A crop is stored: reproduce it exactly.
@@ -366,7 +507,7 @@ export function TenantWebsite({
                         <img
                           src={item.image}
                           alt=""
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                           style={{ objectPosition: focalPointToCss(item.imageFocalPoint) }}
                           loading="lazy"
                         />
@@ -384,34 +525,49 @@ export function TenantWebsite({
                     )}
                   </div>
 
-                  <div className="flex min-w-0 flex-1 flex-col p-6">
+                  <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-5">
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-lg font-semibold break-words">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
-                      {item.description && <p className="mt-2 text-base leading-7 text-[#6f7b90] break-words">{item.description}</p>}
+                      <h3 className="text-sm font-bold break-words leading-snug sm:text-base sm:font-semibold sm:leading-normal">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
+                      {item.description && <p className="mt-1 text-xs leading-[1.45rem] text-[#6f7b90] break-words line-clamp-2 sm:mt-2 sm:text-sm sm:leading-6 sm:line-clamp-none">{item.description}</p>}
                     </div>
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#eef0f4] pt-4">
-                      <div className="min-w-0">
-                        <span className="text-xl font-bold" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
-                        <span className="text-sm text-[#929bad]"> {tenant.currency}</span>
-                        <p className="mt-0.5 text-xs text-[#929bad]">{durationLabel(item.durationMin)}</p>
+
+                    {/* Mobile: metadata + book button on the SAME row (price left, button right in LTR / right–left in RTL).
+                        Desktop (sm+): metadata row above, then full-width button below. */}
+                    <div className="mt-auto pt-3 sm:pt-4">
+                      {/* Mobile: single flex row with duration+price on start, button on end.
+                          Desktop: column — duration+price row, then full-width button. */}
+                      <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-stretch sm:gap-3">
+                        {/* Duration + price */}
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="flex items-center gap-1 text-[#929bad]">
+                            <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                            <span className="text-xs sm:text-sm">{durationLabel(item.durationMin)}</span>
+                          </span>
+                          <span className="flex items-baseline gap-1">
+                            <span className="text-base font-bold sm:text-xl" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
+                            <span className="text-xs text-[#929bad] sm:text-sm">{tenant.currency}</span>
+                          </span>
+                        </div>
+                        {/* Book button — compact & inline on mobile, full-width on desktop */}
+                        <Link
+                          href={`/${locale}/tenants/${slug}/book?service=${item.id}`}
+                          className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all duration-200 hover:opacity-90 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer min-h-[36px] sm:w-full sm:justify-center sm:px-4 sm:py-2.5 sm:text-sm sm:min-h-[44px] sm:rounded-lg"
+                          style={{ backgroundColor: 'var(--site-primary)' }}
+                        >
+                          <span>{rtl ? 'احجز الآن' : 'Book Now'}</span>
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0 rtl:rotate-180" aria-hidden="true" />
+                        </Link>
                       </div>
-                      <Link
-                        href={`/${locale}/tenants/${slug}/book?service=${item.id}`}
-                        className="flex shrink-0 items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)]"
-                        style={{ backgroundColor: 'var(--site-primary)' }}
-                      >
-                        {rtl ? 'احجز' : 'Book'}
-                        <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                      </Link>
                     </div>
+
                   </div>
                 </div>
               ))}
             </div>
           </>
         ) : (
-          <div className="text-center">
-            <CalendarDays className="mx-auto h-10 w-10 text-[#cbd5e1]" />
+          <div className="text-center py-8">
+            <CalendarDays className="mx-auto h-10 w-10 text-[#cbd5e1]" aria-hidden="true" />
             <p className="mt-4 text-sm text-[#929bad]">
               {rtl ? 'لا توجد خدمات متاحة حالياً' : 'No services available yet'}
             </p>
@@ -421,29 +577,70 @@ export function TenantWebsite({
     </section>
   )
 
+  const renderContact = () => {
+    const contactSection = configuredSections?.find((s) => s.type === 'contact')
+    const contactAr = contactSection?.content?.ar ?? {}
+    const contactEn = contactSection?.content?.en ?? {}
+    const heading =
+      (rtl ? (contactAr.heading || contactEn.heading) : (contactEn.heading || contactAr.heading)) || ''
+    const description =
+      (rtl
+        ? (contactAr.description || contactEn.description)
+        : (contactEn.description || contactAr.description)) || ''
+
+    return (
+      <ContactSection
+        key="contact"
+        locale={locale}
+        contact={contactConfig}
+        social={socialConfig}
+        heading={heading}
+        description={description}
+        cta={
+          showPrimaryCta
+            ? {
+                href: primaryCtaHref,
+                label: primaryCtaLabel,
+                external: primaryCtaIsExternal,
+                action: ctaConfig?.action ?? 'booking',
+              }
+            : null
+        }
+      />
+    )
+  }
+
   const SECTION_RENDERERS: Record<string, () => React.ReactNode> = {
     hero: renderHero,
     services: renderServices,
+    contact: renderContact,
   }
 
   return (
     <main
-      className="tenant-site min-h-screen text-[#172033]"
+      className={`tenant-site min-h-screen text-[#172033]${stickyVisible ? ' tenant-site--has-sticky-cta' : ''}`}
       dir={rtl ? 'rtl' : 'ltr'}
-      style={{ ...siteThemeVars, backgroundColor: backgroundColor }}
+      style={{
+        ...siteThemeVars,
+        backgroundColor: backgroundColor,
+        // Bottom space for the fixed mobile floating action button is applied as
+        // a mobile-only CSS rule in globals.css (`.tenant-site--has-sticky-cta`),
+        // NOT inline: the button is `md:hidden`, so an unconditional inline
+        // padding would leave a blank band below the footer on desktop.
+      }}
     >
       {/* Sticky region: optional preview banner + header stick together as one
           unit, so the header never overlaps or gaps regardless of banner height. */}
       <div className="sticky top-0 z-40">
         {previewBanner}
-        <header className="border-b border-[#e8ebf1] bg-paper/95 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-5">
+        <header className="border-b border-[#e8ebf1] bg-paper/95 backdrop-blur-md">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4">
             <Link
               href={`/${locale}`}
-              className="flex min-w-0 items-center gap-2 text-base font-semibold"
+              className="flex min-w-0 items-center gap-2 text-base font-semibold cursor-pointer"
             >
               {logo ? (
-                <img src={logo} alt="" className="h-9 w-auto max-w-full shrink-0 object-contain" />
+                <img src={logo} alt="" className="h-8 w-auto max-w-full shrink-0 object-contain sm:h-9" />
               ) : (
                 <span
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
@@ -466,30 +663,52 @@ export function TenantWebsite({
                   — the element's position among its siblings is not a contract. */}
               <span
                 data-testid="tenant-brand-name"
-                className="min-w-18 line-clamp-2 leading-tight sm:line-clamp-1"
+                className="min-w-18 line-clamp-2 leading-tight text-sm font-semibold sm:text-base sm:line-clamp-1"
                 title={businessName}
               >
                 {businessName}
               </span>
             </Link>
-            <nav className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <nav className="flex min-w-0 items-center gap-1.5 sm:gap-3">
               {showServices && serviceRows.length > 0 && (
                 <a
                   href="#services"
-                  className="hidden text-base font-medium text-[#647087] transition hover:text-[var(--site-primary)] sm:inline-block"
+                  className="hidden text-sm font-medium text-[#647087] transition-colors duration-150 hover:text-[var(--site-primary)] sm:inline-block cursor-pointer"
                 >
                   {rtl ? 'الخدمات' : 'Services'}
                 </a>
               )}
+              {/* Social links: desktop only. The header is already dense on
+                  mobile (brand + locale switch + CTA), so these are hidden below
+                  `sm` rather than competing for space. WhatsApp is a contact
+                  field, so it renders via <WhatsAppLink>. */}
+              <div className="hidden items-center gap-1 sm:flex">
+                <SocialLinks
+                  locale={locale}
+                  social={socialConfig}
+                  className="flex items-center gap-1"
+                  size={18}
+                />
+                <WhatsAppLink locale={locale} contact={contactConfig} size={18} />
+              </div>
               {localeSwitch}
-              <Link
-                href={`/${locale}/tenants/${slug}/book`}
-                className="flex min-w-0 items-center gap-1.5 rounded-lg px-3.5 py-2.5 text-base font-semibold text-white transition hover:opacity-90"
-                style={{ backgroundColor: 'var(--site-primary)' }}
-              >
-                <span className="truncate">{ctaLabel}</span>
-                <ArrowRight className="h-5 w-5 shrink-0" />
-              </Link>
+              {/* Primary CTA. Rendered only when the configured action resolves
+                  to a destination. When the mobile sticky CTA is actually shown,
+                  this is hidden on mobile so exactly one primary action is
+                  visible — the condition is `stickyVisible`, not merely
+                  "sticky enabled", so a non-rendering sticky can never leave the
+                  mobile header without a CTA. */}
+              {showPrimaryCta && (
+                <Link
+                  href={primaryCtaHref}
+                  {...(primaryCtaIsExternal ? { target: '_blank', rel: 'noreferrer' } : {})}
+                  className={`${stickyVisible ? 'hidden md:flex' : 'flex'} min-w-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 cursor-pointer sm:px-3.5 sm:py-2.5`}
+                  style={{ backgroundColor: 'var(--site-primary)' }}
+                >
+                  <span className="truncate">{primaryCtaLabel}</span>
+                  <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                </Link>
+              )}
             </nav>
           </div>
         </header>
@@ -498,16 +717,134 @@ export function TenantWebsite({
       {/* Sections in configured order */}
       {orderedTypes.map((type) => SECTION_RENDERERS[type]?.())}
 
-      {/* Footer */}
-      <footer className="border-t border-border bg-paper py-5">
-        <div className="mx-auto flex max-w-7xl items-center justify-center gap-2 px-4 py-1 sm:px-6">
-          <span className="text-sm text-[#a0a8b6]">{rtl ? 'مدعوم بواسطة' : 'Powered by'}</span>
-          <Link href="/" className="flex items-center gap-1 text-sm font-semibold text-brand-teal" aria-label="Idarty">
-            <LogoIcon height={16} />
-            <span>{rtl ? 'إدارتي' : 'Idarty'}</span>
-          </Link>
+      {/* Footer — three layers:
+            A. contact information (address / phone / email), each shown only
+               when the Contact & Social configuration makes it visible;
+            B. the primary CTA, reusing the already-resolved CTA values so there
+               is no second CTA-resolution mechanism;
+            C. copyright + social links + the Idarty attribution.
+          Every value passes the same render guards as the Contact section. */}
+      <footer className="border-t border-border bg-paper">
+        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12">
+          {/* Layer A — contact information */}
+          {footerContactItems.length > 0 && (
+            <div
+              className={`grid gap-6 sm:gap-8 ${
+                footerContactItems.length === 3
+                  ? 'sm:grid-cols-3'
+                  : footerContactItems.length === 2
+                    ? 'sm:grid-cols-2'
+                    : 'sm:grid-cols-1'
+              }`}
+              data-testid="footer-contact"
+            >
+              {footerContactItems.map((item) => {
+                const Icon = item.icon
+                const body = (
+                  <>
+                    <span
+                      className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--site-primary)]/10 text-[var(--site-primary)]"
+                      aria-hidden="true"
+                    >
+                      <Icon className="h-5 w-5 shrink-0" />
+                    </span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[#929bad]">
+                      {item.label}
+                    </span>
+                    <span className="min-w-0 break-words text-sm font-medium text-[#172033]" dir={item.key === 'address' ? undefined : 'ltr'}>
+                      {item.value}
+                    </span>
+                  </>
+                )
+                return (
+                  <div key={item.key} className="flex flex-col items-center gap-2 text-center">
+                    {item.href ? (
+                      <a
+                        href={item.href}
+                        {...(item.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                        className="flex flex-col items-center gap-2 rounded-xl outline-none transition-colors duration-150 hover:text-[var(--site-primary)] focus-visible:ring-2 focus-visible:ring-[var(--site-primary)] focus-visible:ring-offset-2 cursor-pointer"
+                      >
+                        {body}
+                      </a>
+                    ) : (
+                      body
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Layer B — primary CTA. Rendered only when the existing CTA
+              configuration resolves to a valid, permitted destination, so
+              publish validation is never bypassed and call/WhatsApp never falls
+              back to booking. */}
+          {showPrimaryCta && (
+            <div className={footerContactItems.length > 0 ? 'mt-8' : ''}>
+              <Link
+                href={primaryCtaHref}
+                {...(primaryCtaIsExternal ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                data-testid="footer-cta"
+                className="flex w-full items-center justify-center gap-2 rounded-full px-6 py-3.5 text-base font-semibold text-white shadow-sm transition-all duration-200 hover:opacity-90 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
+                style={{ backgroundColor: 'var(--site-primary)' }}
+              >
+                <span className="min-w-0 break-words">{primaryCtaLabel}</span>
+                <ArrowRight className="h-5 w-5 shrink-0 rtl:rotate-180" aria-hidden="true" />
+              </Link>
+            </div>
+          )}
+
+          {/* Layer C — copyright, social links, attribution */}
+          <div
+            className={`flex flex-col items-center gap-4 border-t border-border pt-6 text-center sm:flex-row sm:justify-between sm:gap-6 sm:text-start ${
+              footerContactItems.length > 0 || showPrimaryCta ? 'mt-8' : ''
+            }`}
+          >
+            <p className="text-sm text-[#929bad] break-words">
+              {rtl
+                ? `© ${footerYear} ${businessName}. جميع الحقوق محفوظة.`
+                : `© ${footerYear} ${businessName}. All rights reserved.`}
+            </p>
+
+            {/* Icons sit in ONE horizontal row below `sm` too, so the social
+                platforms and WhatsApp line up side by side on mobile instead of
+                stacking. `flex-wrap` is intentionally absent here: the row is
+                short enough to fit 360px, and nowrap guarantees no wrapped
+                second line or horizontal overflow. */}
+            <div className="flex flex-row flex-wrap items-center justify-center gap-3 sm:gap-5">
+              <div className="flex items-center gap-2">
+                {hasSocialLinks && <SocialLinks locale={locale} social={socialConfig} size={18} />}
+                <WhatsAppLink locale={locale} contact={contactConfig} size={18} />
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-xs text-[#a0a8b6]">{rtl ? 'مدعوم بواسطة' : 'Powered by'}</span>
+                <Link
+                  href="/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs font-semibold text-brand-teal cursor-pointer"
+                  aria-label="Idarty"
+                >
+                  <LogoIcon height={14} />
+                  <span>{rtl ? 'إدارتي' : 'Idarty'}</span>
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       </footer>
+
+      {/* Mobile sticky CTA — rendered only when enabled AND the primary CTA
+          resolves to a destination. The header CTA above is hidden on mobile in
+          exactly the same condition, so the two can never compete. */}
+      {stickyVisible && (
+        <MobileStickyCta
+          href={primaryCtaHref}
+          label={primaryCtaLabel}
+          external={primaryCtaIsExternal}
+          action={ctaConfig?.action ?? 'booking'}
+        />
+      )}
     </main>
   )
 }

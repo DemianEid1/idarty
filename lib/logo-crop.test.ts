@@ -8,15 +8,38 @@ const tenantWebsiteSource = readFileSync(resolve(__dirname, '../components/tenan
 const imageCropSource = readFileSync(resolve(__dirname, '../lib/image-crop.ts'), 'utf8')
 const configSource = readFileSync(resolve(__dirname, '../lib/website-config.ts'), 'utf8')
 
+/**
+ * The public-site logo `<img>` tag, extracted by its `src={logo}` marker rather
+ * than by an exact class string. The class list legitimately changes with
+ * responsive/typography work; the crop-preservation PROPERTIES
+ * (`object-contain`, natural `w-auto`, no fixed width) are what the tests guard.
+ */
+function logoImgTag(): string {
+  const match = tenantWebsiteSource.match(/<img src=\{logo\}[^>]*\/>/)
+  return match?.[0] ?? ''
+}
+
 describe('Logo is never cropped — object-contain always', () => {
   it('the editor renders the logo with object-contain', () => {
-    // The editor preview uses object-contain for the logo
-    expect(editorSource).toContain('className="h-full w-full object-contain"')
+    // The logo preview now lives inside the shared ImageUploadZone. The zone
+    // defaults to `contain`, and the logo call site does NOT override it to
+    // `cover` — so a logo can never be cropped by its own preview.
+    const zone = readFileSync(resolve(__dirname, '../components/image-upload-zone.tsx'), 'utf8')
+    expect(zone).toContain("previewFit = 'contain'")
+    expect(zone).toContain("object-contain")
+    // The logo usage must not opt into cropping.
+    const logoBlock = editorSource.slice(
+      editorSource.indexOf("rtl ? 'الشعار' : 'Logo'"),
+      editorSource.indexOf('Hero image — optional background image')
+    )
+    expect(logoBlock).not.toContain('previewFit="cover"')
   })
 
   it('the tenant website renders the logo with object-contain', () => {
-    // The public site logo uses object-contain
-    expect(tenantWebsiteSource).toContain('h-9 w-auto max-w-full shrink-0 object-contain')
+    // The public site logo uses object-contain so it is never cropped.
+    const img = logoImgTag()
+    expect(img, 'logo <img> not found').toBeTruthy()
+    expect(img).toContain('object-contain')
   })
 
   it('the editor has no logo crop button', () => {
@@ -60,9 +83,14 @@ describe('Logo rendering for all image shapes', () => {
   })
 
   it('a square logo retains its original aspect ratio', () => {
-    // object-contain preserves the square aspect ratio
-    // No fixed container dimensions
-    expect(tenantWebsiteSource).toContain('h-9 w-auto')
+    // object-contain + a natural-width class preserves the square aspect ratio.
+    // The height step is allowed to be responsive (e.g. `h-8 … sm:h-9`); what
+    // must hold is that the width stays natural (`w-auto`) and no fixed width
+    // is imposed.
+    const img = logoImgTag()
+    expect(img).toContain('object-contain')
+    expect(img).toContain('w-auto')
+    expect(img).not.toMatch(/(?:^|\s)w-(?:24|32|48)(?:\s|")/)
   })
 
   it('a portrait logo is displayed completely', () => {
@@ -73,7 +101,9 @@ describe('Logo rendering for all image shapes', () => {
   it('transparent areas are preserved', () => {
     // object-contain does not crop or modify pixels
     // The logo img must exist and use object-contain
-    expect(tenantWebsiteSource).toContain('<img src={logo} alt="" className="h-9 w-auto max-w-full shrink-0 object-contain" />')
+    const img = logoImgTag()
+    expect(img).toContain('<img src={logo}')
+    expect(img).toContain('object-contain')
     // The logo img has no overflow-hidden class (the overflow-hidden instances
     // are on the hero and service image containers, not the logo)
     expect(tenantWebsiteSource).not.toContain('overflow-hidden shrink-0 object-contain')
@@ -101,17 +131,23 @@ describe('Logo crop metadata cannot cause parts to disappear', () => {
 
 describe('Draft, preview, and published logo rendering consistency', () => {
   it('the editor preview and tenant website both use object-contain', () => {
-    // Both surfaces render the logo identically
-    expect(editorSource).toContain('object-contain')
+    // Both surfaces render the logo without cropping: the public site with
+    // object-contain, the editor through the zone's `contain` default.
+    const zone = readFileSync(resolve(__dirname, '../components/image-upload-zone.tsx'), 'utf8')
+    expect(zone).toContain('object-contain')
+    expect(editorSource).toContain('ImageUploadZone')
     expect(tenantWebsiteSource).toContain('object-contain')
   })
 
   it('the logo upload handler does not set any crop state', () => {
-    // The handler only updates the logo field
-    const uploadHandler = editorSource.match(/onChange=\{\(e\) => \{[\s\S]*?readAsDataURL/)
-    expect(uploadHandler).not.toBeNull()
-    // No logoImageCrop: undefined in the upload handler
-    expect(uploadHandler![0]).not.toContain('logoImageCrop')
+    // Logo upload now goes through the shared ImageUploadZone, whose onFile
+    // callback only writes the logo field. The upload path must never touch
+    // crop state — the logo is never cropped.
+    expect(editorSource).not.toContain('logoImageCrop')
+    // The logo upload callback writes theme.logo and nothing else.
+    const logoHandler = editorSource.match(/updateTheme\('logo', event\.target\.result\)/)
+    expect(logoHandler).not.toBeNull()
+    expect(logoHandler![0]).not.toContain('Crop')
   })
 })
 

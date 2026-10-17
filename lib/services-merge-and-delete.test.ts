@@ -35,34 +35,37 @@ describe('req 4 — the two Services sections are merged into one', () => {
     // Restored behaviour: Section Management is the original interface and owns
     // visibility/ordering for all sections.
     expect(editor).toContain("const editableSections = config.sections.filter((s) => isRenderableSectionType(s.type))")
-    const managementBlock = editor.slice(editor.indexOf("{rtl ? 'إدارة الأقسام'"))
+    const managementBlock = editor.slice(editor.indexOf("accordion('sections'"))
     expect(managementBlock).toContain('{editableSections')
     // It is NOT filtered to exclude services.
     expect(editor).not.toContain('genericSections')
   })
 
-  it('does not repeat the Services text in Section Content', () => {
-    // The Services text lives in the Services area beside the service list, so
-    // Section Content lists only the other sections.
-    expect(editor).toContain("const contentSections = editableSections.filter((s) => s.type !== 'services')")
+  it('edits the Services text in Section Content, which lists every section', () => {
+    // The Services section's text is edited by the generic Section Content
+    // accordion, which now lists EVERY renderable section — services included.
+    // One editor per field: the text is not repeated in the services list panel.
+    expect(editor).not.toContain("editableSections.filter((s) => s.type !== 'services')")
     const contentBlock = editor.slice(
-      editor.indexOf("{rtl ? 'محتوى الأقسام'"),
-      editor.indexOf("{rtl ? 'إدارة الأقسام'")
+      editor.indexOf("accordion('content'"),
+      editor.indexOf("accordion('services'")
     )
-    expect(contentBlock).toContain('{contentSections')
+    expect(contentBlock).toContain('{editableSections')
   })
 
   it('preserves every control that existed before the merge', () => {
-    // A. the Services section text
-    expect(servicesSection).toContain('onUpdateContent')
-    expect(servicesSection).toContain('onResetContent')
-    // B. the service list + add
+    // The service list + add
     expect(servicesSection).toContain('<ServiceForm')
     expect(servicesSection).toContain('إضافة خدمة')
     expect(servicesSection).toContain('Add service')
-    // C. per-service image management
+    // Per-service image management
     expect(servicesSection).toContain('<ServiceImageForm')
-    // Visibility/ordering are NOT here any more — they belong to Section
+    // The Services section TEXT is still editable — through the shared
+    // SECTION_CONTENT_FIELDS contract rendered by Section Content.
+    expect(editor).toContain('SECTION_CONTENT_FIELDS[section.type]')
+    expect(editor).toContain('updateSectionContent')
+    expect(editor).toContain('resetSectionContent')
+    // Visibility/ordering are NOT in the services panel — they belong to Section
     // Management, which the editor still renders for every section. Assert on the
     // rendered literal so the component's own prose is not a false positive.
     expect(servicesSection).not.toContain('onToggleVisibility')
@@ -72,8 +75,10 @@ describe('req 4 — the two Services sections are merged into one', () => {
   })
 
   it('keeps the section content fields driven by the shared contract', () => {
-    // No hand-rolled field list that could drift from the renderer.
-    expect(servicesSection).toContain('SECTION_CONTENT_FIELDS.services')
+    // No hand-rolled field list that could drift from the renderer: Section
+    // Content reads the shared contract for every section, services included.
+    expect(editor).toContain('SECTION_CONTENT_FIELDS[section.type]')
+    expect(editor).toContain('isRenderableSectionType(section.type)')
   })
 
   it('reuses the editor handlers rather than re-implementing them', () => {
@@ -81,13 +86,16 @@ describe('req 4 — the two Services sections are merged into one', () => {
     expect(servicesSection).not.toContain('setConfig')
     expect(servicesSection).not.toContain('markChanged')
     expect(servicesSection).not.toContain('removeSection(')
-    // It calls back into the editor instead.
-    expect(editor).toContain('onUpdateContent={updateSectionContent}')
-    expect(editor).toContain('onResetContent={resetSectionContent}')
+    // The section-text handlers are declared once in the editor and used by the
+    // Section Content accordion; they are not re-implemented anywhere.
+    expect(editor).toContain('updateSectionContent')
+    expect(editor).toContain('resetSectionContent')
+    expect(servicesSection).not.toContain('updateSectionContent')
+    expect(servicesSection).not.toContain('resetSectionContent')
   })
 
   it('restores Section Management with its own visibility/order/remove controls', () => {
-    const managementBlock = editor.slice(editor.indexOf("{rtl ? 'إدارة الأقسام'"))
+    const managementBlock = editor.slice(editor.indexOf("accordion('sections'"))
     expect(managementBlock).toContain('toggleSectionVisibility')
     expect(managementBlock).toContain('moveSection')
     expect(managementBlock).toContain('handleRemoveSection')
@@ -103,9 +111,12 @@ describe('req 4 — the two Services sections are merged into one', () => {
   })
 
   it('is localized in both languages', () => {
-    for (const label of ['الخدمات', 'Services', 'نص القسم', 'Section text', 'خدماتك', 'Your services']) {
+    for (const label of ['خدماتك', 'Your services', 'إضافة خدمة', 'Add service']) {
       expect(servicesSection).toContain(label)
     }
+    // The Services section's own heading/description labels are edited through
+    // the shared Section Content accordion.
+    expect(editor).toContain('CONTENT_FIELD_LABELS')
   })
 
   it('refreshes the list after creating a service', () => {

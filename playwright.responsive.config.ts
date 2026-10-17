@@ -39,6 +39,10 @@ const PORT = Number(process.env.RESPONSIVE_PORT ?? 3000)
 
 export default defineConfig({
   testDir: './e2e-responsive',
+  // Generated artifacts (traces, error contexts) go to a dedicated gitignored
+  // directory. Playwright WIPES its outputDir at the start of every run, so
+  // pointing it at `test-results/` would destroy pre-existing files there.
+  outputDir: '.playwright-output',
   fullyParallel: false,
   reporter: [['list']],
   timeout: 60_000,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { TenantWebsite } from '@/components/tenant-website'
-import { createDefaultWebsiteConfig } from './website-config'
+import { createDefaultWebsiteConfig, parseWebsiteConfig } from './website-config'
 import { THEME_PRESETS, applyPreset } from './theme-presets'
 
 /**
@@ -61,7 +61,7 @@ describe('TenantWebsite theme rendering (real component)', () => {
     const el = TenantWebsite({
       ...baseProps,
       tenant: { ...baseProps.tenant, theme: { primaryColor: '#123456' } },
-      config: { theme: {}, sections: [] },
+      config: parseWebsiteConfig({ theme: {}, sections: [] }),
     }) as React.ReactElement<{ style: Record<string, string> }>
     expect(el.props.style['--site-primary']).toBe('#123456')
   })

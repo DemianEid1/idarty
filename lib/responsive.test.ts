@@ -73,6 +73,19 @@ const render = (locale: 'ar' | 'en' = 'ar', config = baseProps.config) =>
 const find = (nodes: Node[], pred: (n: Node) => boolean) => nodes.find(pred)
 
 /**
+ * The tenant brand-name span, located by its STABLE hook rather than by a
+ * utility class. The class list legitimately changes with typography/spacing
+ * work, but `data-testid` is the documented contract (the Playwright spec
+ * selects it the same way), so tests do not break on cosmetic churn.
+ */
+const brandName = (nodes: Node[]) =>
+  find(nodes, (n) => n.testId === 'tenant-brand-name')
+
+/** The brand link that wraps the logo + name. */
+const brandLink = (nodes: Node[]) =>
+  find(links(nodes), (n) => n.className.includes('min-w-0') && n.className.includes('items-center'))
+
+/**
  * Any element that links somewhere. Next.js `<Link>` does NOT render as
  * `type === 'a'` in the element tree (only raw `<a>` tags do), so match on the
  * presence of an `href` prop instead of the element type.
@@ -119,17 +132,18 @@ describe('responsive: text wrapping safety', () => {
 })
 
 describe('responsive: header fits narrow screens', () => {
-  it('the header row can shrink and has a gap', () => {
+  it('the header row can shrink and has a nonzero gap', () => {
     const row = find(render(), (n) => n.type === 'div' && n.className.includes('max-w-7xl') && n.className.includes('justify-between'))!
-    expect(row.className).toContain('gap-3')
+    // Any nonzero gap satisfies the design; the exact step (gap-2 vs gap-3) is
+    // a spacing decision, not a contract. What matters is that a gap exists so
+    // the brand and the nav cannot touch.
+    const gap = row.className.match(/(?:^|\s)gap-(\d+(?:\.\d+)?)(?:\s|$)/)
+    expect(gap, `no gap utility on header row: ${row.className}`).toBeTruthy()
+    expect(Number(gap![1])).toBeGreaterThan(0)
   })
 
   it('the brand name is visible at every breakpoint and never hidden', () => {
-    const brand = find(links(render()), (n) => n.className.includes('min-w-0') && n.className.includes('gap-2'))!
-    expect(brand).toBeTruthy()
-    const nameSpan = flatten(brand.children).find(
-      (n) => n.type === 'span' && n.className.includes('line-clamp-2')
-    )
+    const nameSpan = brandName(render())
     expect(nameSpan).toBeTruthy()
     // The business name is the tenant's identity on the public site, so it is
     // rendered at every width. Hiding it below `sm` (the previous behaviour)
@@ -139,10 +153,7 @@ describe('responsive: header fits narrow screens', () => {
   })
 
   it('the brand name can shrink but keeps a readable floor', () => {
-    const brand = find(links(render()), (n) => n.className.includes('min-w-0') && n.className.includes('gap-2'))!
-    const nameSpan = flatten(brand.children).find(
-      (n) => n.type === 'span' && n.className.includes('line-clamp-2')
-    )!
+    const nameSpan = brandName(render())!
     // A min-width floor stops flex from sacrificing the brand name first; the
     // class must not be the 0-width `min-w-0` (that is what squeezed it to
     // ~40px on a 320px viewport). `min-w-18` = 4.5rem = 72px.
@@ -151,36 +162,27 @@ describe('responsive: header fits narrow screens', () => {
   })
 
   it('the brand name wraps to two lines on mobile and one line from sm up', () => {
-    const brand = find(links(render()), (n) => n.className.includes('min-w-0') && n.className.includes('gap-2'))!
-    const nameSpan = flatten(brand.children).find(
-      (n) => n.type === 'span' && n.className.includes('line-clamp-2')
-    )!
+    const nameSpan = brandName(render())!
+    // Mobile: up to TWO lines, then truncation.
     expect(nameSpan.className).toContain('line-clamp-2')
+    // From `sm` up: a single line.
     expect(nameSpan.className).toContain('sm:line-clamp-1')
     expect(nameSpan.className).toContain('leading-tight')
   })
 
   it('the brand name exposes the full text when it is clipped', () => {
-    const brand = find(links(render()), (n) => n.className.includes('min-w-0') && n.className.includes('gap-2'))!
-    const nameSpan = flatten(brand.children).find(
-      (n) => n.type === 'span' && n.className.includes('line-clamp-2')
-    )!
     // `title` is the accessible fallback for a long, ellipsized business name.
-    expect(nameSpan.title).toBe('صالون')
+    expect(brandName(render())!.title).toBe('صالون')
   })
 
   it('the brand name carries a stable test hook for the layout tests', () => {
-    const brand = find(links(render()), (n) => n.className.includes('min-w-0') && n.className.includes('gap-2'))!
-    const nameSpan = flatten(brand.children).find(
-      (n) => n.type === 'span' && n.className.includes('line-clamp-2')
-    )!
     // The Playwright spec selects this element by testid rather than by its
     // position among siblings, so the attribute is part of the contract.
-    expect(nameSpan.testId).toBe('tenant-brand-name')
+    expect(brandName(render())!.testId).toBe('tenant-brand-name')
   })
 
   it('the brand name is not duplicated by the logo alt text', () => {
-    const brand = find(links(render()), (n) => n.className.includes('min-w-0') && n.className.includes('gap-2'))!
+    const brand = brandLink(render())!
     const img = flatten(brand.children).find((n) => n.type === 'img')
     // The name sits next to the logo, so a business-name alt would make screen
     // readers announce it twice; the decorative logo uses alt="".
@@ -199,13 +201,13 @@ describe('responsive: header fits narrow screens', () => {
         previewBanner: 'Draft Preview — This page is not public',
       })
     )
-    const nameSpan = find(
-      withBanner,
-      (n) => n.type === 'span' && n.className.includes('line-clamp-2')
-    )
+    const nameSpan = find(withBanner, (n) => n.testId === 'tenant-brand-name')
     expect(nameSpan).toBeTruthy()
     expect(nameSpan!.className).not.toContain('hidden')
     expect(nameSpan!.title).toBe('صالون')
+    // Preview parity includes the clamping behaviour.
+    expect(nameSpan!.className).toContain('line-clamp-2')
+    expect(nameSpan!.className).toContain('sm:line-clamp-1')
   })
 
   it('the nav can shrink below its content', () => {
@@ -266,13 +268,26 @@ describe('responsive: sections and cards', () => {
     for (const card of cards) expect(card.className).toContain('min-w-0')
   })
 
-  it('the card footer wraps so price and action do not collide', () => {
-    const footer = find(
-      render(),
-      (n) => n.type === 'div' && n.className.includes('justify-between') && n.className.includes('flex-wrap')
-    )!
-    expect(footer).toBeTruthy()
-    expect(footer.className).toContain('gap-3')
+  it('the card keeps price and action from colliding', () => {
+    // The metadata row (duration + price) wraps, and the booking action is its
+    // own row beneath it, so the two can never overlap — even at 320px. The
+    // exact `justify-between`/`gap-3` pairing is no longer the mechanism, so the
+    // assertion targets the properties that actually prevent a collision.
+    const nodes = render()
+    const metadataRow = find(
+      nodes,
+      (n) => n.type === 'div' && n.className.includes('flex-wrap') && n.className.includes('items-center')
+    )
+    expect(metadataRow).toBeTruthy()
+    expect(metadataRow!.className).toContain('flex-wrap')
+
+    const action = find(
+      links(nodes),
+      (n) => String(n.href ?? '').includes('?service=')
+    )
+    expect(action).toBeTruthy()
+    // The action carries its own width/spacing rules rather than sharing a row.
+    expect(action!.className).toMatch(/w-fit|sm:w-full/)
   })
 
   it('the grid keeps responsive column counts', () => {

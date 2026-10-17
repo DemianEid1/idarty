@@ -78,9 +78,16 @@ describe('website section management', () => {
 
     it('rejects an unsupported section type', () => {
       const config = richConfig()
-      for (const type of ['team', 'about', 'contact', 'bogus', '', 'hero; DROP TABLE']) {
+      // `contact` is now renderable, so it is deliberately NOT in this list.
+      for (const type of ['team', 'about', 'bogus', '', 'hero; DROP TABLE']) {
         expect(addSection(config, type)).toEqual(config)
       }
+    })
+
+    it('accepts the contact section type now that it has a renderer', () => {
+      const config = richConfig()
+      const result = addSection(config, 'contact')
+      expect(result.sections.map((s) => s.type)).toContain('contact')
     })
 
     it('prevents duplicate instances of the same type', () => {

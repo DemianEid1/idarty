@@ -1,4 +1,5 @@
 import { ShieldCheck } from 'lucide-react'
+import type { Metadata } from 'next'
 import type { Locale } from '@/lib/i18n'
 import { notFound } from 'next/navigation'
 import { aliasedTable, and, eq, isNull } from 'drizzle-orm'
@@ -11,6 +12,7 @@ import { toServiceImageProps } from '@/lib/image-focal-point'
 import { TenantWebsite } from '@/components/tenant-website'
 import { LocaleSwitchLink } from '@/components/locale-switcher'
 import { buildTenantLocalePath } from '@/lib/locale-path'
+import { buildTenantMetadata } from '@/lib/tenant-metadata'
 
 function createTenantPublicCache(slug: string, locale: Locale) {
   return unstable_cache(
@@ -57,6 +59,50 @@ function createTenantPublicCache(slug: string, locale: Locale) {
     ['tenant-public', slug, locale],
     { revalidate: 60, tags: [`tenant-public-${slug}-${locale}`] }
   )
+}
+
+/**
+ * Localized metadata for the public tenant page.
+ *
+ * Reuses the SAME `unstable_cache`d loader the page body uses, so metadata adds
+ * no extra database round-trips and cannot diverge from what the page renders.
+ *
+ * Only published public data is read: the tenant's translation and its PUBLISHED
+ * website configuration. Draft configuration is never consulted, and no internal
+ * identifier is emitted. Unknown/unavailable tenants yield no tenant-specific
+ * metadata, so `notFound()` behaviour is unchanged.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: Locale; slug: string }>
+}): Promise<Metadata> {
+  const { locale, slug } = await params
+  const getTenantData = createTenantPublicCache(slug, locale)
+  const data = await getTenantData()
+
+  if (!data) return {}
+
+  const { tenant, translation, fallbackTranslation, publishedConfig } = data
+
+  // Same visibility rule the page body applies: a suspended workspace is not
+  // public, so it gets no indexable metadata.
+  if (tenant.status === 'suspended') return {}
+
+  const effective = translation || fallbackTranslation
+
+  return buildTenantMetadata({
+    locale,
+    slug,
+    translation: effective
+      ? {
+          name: translation?.name || fallbackTranslation?.name || '',
+          tagline: translation?.tagline || fallbackTranslation?.tagline || null,
+          description: translation?.description || fallbackTranslation?.description || null,
+        }
+      : null,
+    publishedConfig,
+  })
 }
 
 export default async function TenantPage({ params }: { params: Promise<{ locale: Locale; slug: string }> }) {

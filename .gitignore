@@ -15,3 +15,7 @@ node_modules
 .DS_Store
 *.tsbuildinfo
 scratch/
+
+# Playwright generated artifacts. Kept OUT of test-results/ because Playwright
+# wipes its outputDir at the start of every run.
+.playwright-output/

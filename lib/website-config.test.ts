@@ -114,11 +114,13 @@ describe('website-config validation', () => {
   })
 
   describe('createDefaultWebsiteConfig', () => {
-    it('creates a config with hero and services sections', () => {
+    it('creates a config with hero, services and contact sections', () => {
       const config = createDefaultWebsiteConfig()
-      expect(config.sections).toHaveLength(2)
+      expect(config.sections).toHaveLength(3)
       expect(config.sections[0].type).toBe('hero')
       expect(config.sections[1].type).toBe('services')
+      // Contact defaults after Services and before the Footer.
+      expect(config.sections[2].type).toBe('contact')
       expect(config.sections[0].isVisible).toBe(true)
       expect(config.sections[1].isVisible).toBe(true)
     })
@@ -165,7 +167,7 @@ describe('website-config validation', () => {
       })
 
     it('returns the legacy default order when no config exists', () => {
-      expect(resolveOrderedSectionTypes(null)).toEqual(['hero', 'services'])
+      expect(resolveOrderedSectionTypes(null)).toEqual(['hero', 'services', 'contact'])
     })
 
     it('returns visible sections ordered by sortOrder', () => {
@@ -249,7 +251,8 @@ describe('website-config validation', () => {
     it('rejects schema-valid but unrendered types', () => {
       expect(isRenderableSectionType('team')).toBe(false)
       expect(isRenderableSectionType('about')).toBe(false)
-      expect(isRenderableSectionType('contact')).toBe(false)
+      // `contact` gained a renderer in this phase, so it is now renderable.
+      expect(isRenderableSectionType('contact')).toBe(true)
     })
 
     it('rejects arbitrary strings', () => {
@@ -330,8 +333,8 @@ describe('website-config validation', () => {
       }
     })
 
-    it('only exposes hero and services', () => {
-      expect(Object.keys(SECTION_CONTENT_FIELDS).sort()).toEqual(['hero', 'services'])
+    it('only exposes hero, services and contact', () => {
+      expect(Object.keys(SECTION_CONTENT_FIELDS).sort()).toEqual(['contact', 'hero', 'services'])
     })
 
     it('keeps every field maxLength within the server-side value bound', () => {
