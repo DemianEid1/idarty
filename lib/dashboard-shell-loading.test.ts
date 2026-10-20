@@ -143,7 +143,7 @@ describe('4. the shared nav module is the single source of truth', () => {
       navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
     )
     const ids = [...block.matchAll(/id: '([a-z]+)'/g)].map((m) => m[1])
-    expect(ids).toEqual(['overview', 'customers', 'services', 'team', 'website', 'settings'])
+    expect(ids).toEqual(['overview', 'bookings', 'customers', 'services', 'team', 'website', 'settings'])
   })
 
   it('the page uses the shared copy instead of its own', () => {
