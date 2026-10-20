@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { aliasedTable, and, count, desc, eq, gte, isNull, lt, not } from 'drizzle-orm'
+import { aliasedTable, and, count, desc, eq, gte, inArray, isNull, lt, not } from 'drizzle-orm'
 import { CalendarDays, CheckCircle2, ClipboardList, Pencil, Plus, Settings2, Users } from 'lucide-react'
 import { requireTenantAccess } from '@/lib/authz'
 import { dashboardCopy } from '@/lib/dashboard-nav'
@@ -29,13 +29,18 @@ import { WorkspaceSettingsForm } from '@/components/workspace-settings-form'
 import { ServiceImageForm } from '@/components/service-image-form'
 import { serviceFocalPoint, numericCrop } from '@/lib/image-focal-point'
 import { isBusinessType } from '@/lib/business-types'
+import { ALL_BOOKING_STATUSES, getStatusColor, getStatusLabel, statusColors, statusText } from '@/lib/booking-status'
 
 
-export default async function TenantDashboard(props: { params: Promise<{ locale: Locale; slug: string }>; searchParams: Promise<{ tab?: string; page?: string }> }) {
+export default async function TenantDashboard(props: {
+  params: Promise<{ locale: Locale; slug: string }>
+  searchParams: Promise<{ tab?: string; page?: string; status?: string }>
+}) {
   const { locale, slug } = await props.params
   const searchParams = await props.searchParams
   const tab = searchParams.tab || 'overview'
   const page = Math.max(1, parseInt(searchParams.page ?? '1', 10) || 1)
+  const statusFilter = searchParams.status || 'all'
   const pageSize = 12
   const rtl = locale === 'ar'
   const t = dashboardCopy[locale]
@@ -65,18 +70,6 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
         </div>
       </div>
     )
-  }
-
-  const statusColors: Record<string, string> = {
-    confirmed: 'bg-[#eaf8f1] text-[#24865b]',
-    cancelled: 'bg-[#fdf2f2] text-[#b42318]',
-    no_show: 'bg-[#f1f5f9] text-[#475569]'
-  }
-
-  const statusText: Record<string, { ar: string; en: string }> = {
-    confirmed: { ar: 'مؤكد', en: 'Confirmed' },
-    cancelled: { ar: 'ملغى', en: 'Cancelled' },
-    no_show: { ar: 'لم يحضر', en: 'No-show' }
   }
 
   const startOfDay = new Date()
@@ -145,6 +138,112 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
   ])
 
   const bookingsByService = new Map(serviceBookingCounts.map((r) => [r.serviceId, r.value]))
+
+  let bookingListRows: Array<{
+    id: string
+    startsAt: Date
+    endsAt: Date
+    status: string
+    source: string
+    customerNote: string | null
+    internalNote: string | null
+    cancelReason: string | null
+    createdAt: Date
+    customerName: string
+    customerPhone: string
+    customerEmail: string | null
+  }> = []
+  let totalBookingsCount = 0
+  const itemsByBooking = new Map<
+    string,
+    Array<{
+      id: string
+      serviceName: string
+      staffName: string
+      durationMin: number
+      priceAmount: string
+      startsAt: Date
+      endsAt: Date
+    }>
+  >()
+
+  if (tab === 'bookings') {
+    const bookingConditions = [
+      eq(bookings.tenantId, access.tenant.id),
+      isNull(bookings.deletedAt),
+    ]
+    if (statusFilter && statusFilter !== 'all') {
+      bookingConditions.push(eq(bookings.status, statusFilter as any))
+    }
+
+    const [countResult, bRows] = await Promise.all([
+      db.select({ value: count() }).from(bookings).where(and(...bookingConditions)),
+      db
+        .select({
+          id: bookings.id,
+          startsAt: bookings.startsAt,
+          endsAt: bookings.endsAt,
+          status: bookings.status,
+          source: bookings.source,
+          customerNote: bookings.customerNote,
+          internalNote: bookings.internalNote,
+          cancelReason: bookings.cancelReason,
+          createdAt: bookings.createdAt,
+          customerName: customers.fullName,
+          customerPhone: customers.phoneE164,
+          customerEmail: customers.email,
+        })
+        .from(bookings)
+        .innerJoin(customers, eq(customers.id, bookings.customerId))
+        .where(and(...bookingConditions))
+        .orderBy(desc(bookings.startsAt))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+    ])
+
+    totalBookingsCount = countResult[0]?.value ?? 0
+    bookingListRows = bRows
+
+    if (bRows.length > 0) {
+      const bIds = bRows.map((b) => b.id)
+      const rawItems = await db
+        .select({
+          id: bookingItems.id,
+          bookingId: bookingItems.bookingId,
+          startsAt: bookingItems.startsAt,
+          endsAt: bookingItems.endsAt,
+          priceAmount: bookingItems.priceAmount,
+          serviceName: serviceTranslations.name,
+          fallbackServiceName: fallbackServiceTranslations.name,
+          durationMin: services.durationMin,
+          staffName: staffTranslations.name,
+          fallbackStaffName: fallbackStaffTranslations.name,
+        })
+        .from(bookingItems)
+        .leftJoin(services, eq(services.id, bookingItems.serviceId))
+        .leftJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale)))
+        .leftJoin(fallbackServiceTranslations, and(eq(fallbackServiceTranslations.serviceId, services.id), eq(fallbackServiceTranslations.locale, fallbackLocale)))
+        .leftJoin(staff, eq(staff.id, bookingItems.staffId))
+        .leftJoin(staffTranslations, and(eq(staffTranslations.staffId, staff.id), eq(staffTranslations.locale, locale)))
+        .leftJoin(fallbackStaffTranslations, and(eq(fallbackStaffTranslations.staffId, staff.id), eq(fallbackStaffTranslations.locale, fallbackLocale)))
+        .where(and(eq(bookingItems.tenantId, access.tenant.id), inArray(bookingItems.bookingId, bIds)))
+        .orderBy(bookingItems.sortOrder, bookingItems.startsAt)
+
+      for (const item of rawItems) {
+        const list = itemsByBooking.get(item.bookingId) ?? []
+        list.push({
+          id: item.id,
+          serviceName: item.serviceName || item.fallbackServiceName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
+          staffName: item.staffName || item.fallbackStaffName || (rtl ? 'عضو فريق' : 'Staff member'),
+          durationMin: item.durationMin ?? 0,
+          priceAmount: String(item.priceAmount ?? '0'),
+          startsAt: item.startsAt,
+          endsAt: item.endsAt,
+        })
+        itemsByBooking.set(item.bookingId, list)
+      }
+    }
+  }
 
   const tenantTheme = (access.tenant as any).theme as Record<string, string> | null ?? {}
   const websiteConfigRow = await db.query.websiteConfig.findFirst({ where: eq(websiteConfig.tenantId, access.tenant.id) })
@@ -252,6 +351,280 @@ export default async function TenantDashboard(props: { params: Promise<{ locale:
 
             <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{t.appointments}</h2><div className="mt-6 space-y-3">{todayBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-12 text-center text-sm text-ink-muted">{t.empty}</div> : todayBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-4"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
             <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'المواعيد القادمة' : 'Upcoming bookings'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'نظرة على الأيام السبعة القادمة.' : 'A view of the next seven days.'}</p></div><span className="shrink-0 rounded-full bg-[#fff5e8] px-3 py-1 text-xs font-semibold text-[#b86a12]">{upcomingBookings.length}</span></div><div className="mt-5 space-y-2">{upcomingBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا توجد مواعيد قادمة.' : 'No upcoming bookings.'}</div> : upcomingBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
+          </div>
+        )}
+
+        {tab === 'bookings' && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
+              {/* Header & Total Count */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">{t.bookings}</h2>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    {rtl
+                      ? 'عرض وتفاصيل جميع الحجوزات والخدمات المرتبطة بها.'
+                      : 'View and manage all bookings and their associated services.'}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">
+                  {totalBookingsCount} {rtl ? 'حجز' : 'bookings'}
+                </span>
+              </div>
+
+              {/* Status Filter Tabs / Chips */}
+              <div className="mt-5 flex flex-wrap items-center gap-2 border-b border-border pb-4">
+                <a
+                  href="?tab=bookings"
+                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                    statusFilter === 'all'
+                      ? 'bg-brand-teal text-white shadow-sm'
+                      : 'border border-border bg-surface text-ink-muted hover:border-brand-teal hover:text-brand-teal'
+                  }`}
+                >
+                  {rtl ? 'الكل' : 'All'}
+                </a>
+                {ALL_BOOKING_STATUSES.map((st) => (
+                  <a
+                    key={st}
+                    href={`?tab=bookings&status=${st}`}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                      statusFilter === st
+                        ? 'bg-brand-teal text-white shadow-sm'
+                        : 'border border-border bg-surface text-ink-muted hover:border-brand-teal hover:text-brand-teal'
+                    }`}
+                  >
+                    {getStatusLabel(st, locale)}
+                  </a>
+                ))}
+              </div>
+
+              {/* Bookings List */}
+              <div className="mt-5 space-y-4">
+                {bookingListRows.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-12 text-center text-sm text-ink-muted">
+                    {t.emptyBookings}
+                  </div>
+                ) : (
+                  bookingListRows.map((b) => {
+                    const items = itemsByBooking.get(b.id) ?? []
+                    const totalPrice = items.reduce(
+                      (acc, item) => acc + (parseFloat(item.priceAmount) || 0),
+                      0
+                    )
+                    const totalDuration = items.reduce((acc, item) => acc + item.durationMin, 0)
+                    const servicesSummary = items.map((i) => i.serviceName).join(' + ')
+
+                    return (
+                      <div
+                        key={b.id}
+                        className="rounded-2xl border border-border bg-surface p-4 transition hover:border-[#ccd5e4]"
+                      >
+                        {/* Top row: Customer, Date/Time, Status Badge */}
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-semibold text-[#172033] wrap-anywhere">
+                                {b.customerName}
+                              </h3>
+                              <span
+                                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${getStatusColor(
+                                  b.status
+                                )}`}
+                              >
+                                {getStatusLabel(b.status, locale)}
+                              </span>
+                              {b.source === 'online' ? (
+                                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                                  {rtl ? 'أونلاين' : 'Online'}
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                                  {rtl ? 'لوحة التحكم' : 'Dashboard'}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Date & Time */}
+                            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                              <span>
+                                {new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                }).format(b.startsAt)}
+                              </span>
+                              {totalDuration > 0 && (
+                                <span>
+                                  · {totalDuration} {rtl ? 'دقيقة' : 'min'}
+                                </span>
+                              )}
+                            </p>
+
+                            {/* Services preview line */}
+                            {servicesSummary && (
+                              <p className="mt-2 text-xs font-medium text-[#374151] wrap-anywhere">
+                                <span className="text-ink-muted">{rtl ? 'الخدمات: ' : 'Services: '}</span>
+                                {servicesSummary}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Price & Items Count */}
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="text-base font-bold text-[#172033]">
+                              {totalPrice.toFixed(2)} {access.tenant.currency}
+                            </span>
+                            <span className="text-xs text-ink-muted">
+                              {items.length} {rtl ? 'خدمات' : 'items'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Collapsible Details */}
+                        <details className="group mt-3 border-t border-[#e2e8f0] pt-3">
+                          <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold text-brand-teal transition hover:underline focus:outline-none">
+                            <span>{rtl ? 'عرض تفاصيل الحجز والخدمات' : 'View booking & service details'}</span>
+                            <span className="transition-transform duration-200 group-open:rotate-180">
+                              ▼
+                            </span>
+                          </summary>
+
+                          <div className="mt-3 space-y-4 pt-2 text-xs">
+                            {/* Service Items Breakdown */}
+                            <div>
+                              <h4 className="font-semibold text-[#172033] mb-2">
+                                {rtl ? 'الخدمات المحجوزة:' : 'Booked Services:'}
+                              </h4>
+                              <div className="space-y-2">
+                                {items.map((item, idx) => (
+                                  <div
+                                    key={item.id || idx}
+                                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2.5 border border-border"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-medium text-[#172033]">{item.serviceName}</p>
+                                      <p className="mt-0.5 text-[11px] text-ink-muted">
+                                        {rtl ? 'الموظف المسؤول: ' : 'Staff: '}
+                                        <span className="text-[#374151] font-medium">{item.staffName}</span>
+                                        {' · '}
+                                        {item.durationMin} {rtl ? 'دقيقة' : 'min'}
+                                        {' · '}
+                                        {new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+                                          hour: 'numeric',
+                                          minute: '2-digit',
+                                        }).format(item.startsAt)}
+                                        {' – '}
+                                        {new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+                                          hour: 'numeric',
+                                          minute: '2-digit',
+                                        }).format(item.endsAt)}
+                                      </p>
+                                    </div>
+                                    <span className="font-semibold text-[#172033]">
+                                      {item.priceAmount} {access.tenant.currency}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Customer Contact & Booking Metadata */}
+                            <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-paper p-3 border border-border">
+                              <div>
+                                <p className="font-semibold text-[#172033] mb-1">
+                                  {rtl ? 'بيانات العميل:' : 'Customer Information:'}
+                                </p>
+                                <p className="text-ink-muted">
+                                  {rtl ? 'الاسم: ' : 'Name: '}
+                                  <span className="text-[#172033] font-medium">{b.customerName}</span>
+                                </p>
+                                <p className="text-ink-muted mt-0.5" dir="ltr">
+                                  <span className="text-ink-muted">{rtl ? 'الهاتف: ' : 'Phone: '}</span>
+                                  <span className="text-[#172033] font-medium">{b.customerPhone}</span>
+                                </p>
+                                {b.customerEmail && (
+                                  <p className="text-ink-muted mt-0.5">
+                                    {rtl ? 'البريد: ' : 'Email: '}
+                                    <span className="text-[#172033] font-medium">{b.customerEmail}</span>
+                                  </p>
+                                )}
+                              </div>
+
+                              <div>
+                                <p className="font-semibold text-[#172033] mb-1">
+                                  {rtl ? 'تفاصيل إضافية:' : 'Additional Details:'}
+                                </p>
+                                {b.customerNote && (
+                                  <p className="text-ink-muted">
+                                    {rtl ? 'ملاحظة العميل: ' : 'Customer note: '}
+                                    <span className="text-[#172033] italic">"{b.customerNote}"</span>
+                                  </p>
+                                )}
+                                {b.internalNote && (
+                                  <p className="text-ink-muted mt-0.5">
+                                    {rtl ? 'ملاحظة داخلية: ' : 'Internal note: '}
+                                    <span className="text-[#172033] italic">"{b.internalNote}"</span>
+                                  </p>
+                                )}
+                                {b.cancelReason && (
+                                  <p className="text-red-600 mt-0.5">
+                                    {rtl ? 'سبب الإلغاء: ' : 'Cancel reason: '}
+                                    <span className="font-medium">{b.cancelReason}</span>
+                                  </p>
+                                )}
+                                <p className="text-ink-muted mt-1 text-[11px]">
+                                  {rtl ? 'تاريخ الإنشاء: ' : 'Created at: '}
+                                  {new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+                                    dateStyle: 'medium',
+                                    timeStyle: 'short',
+                                  }).format(b.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Booking Status Actions (Cancel / No-show / Reschedule) */}
+                            {b.status === 'confirmed' && (
+                              <div className="pt-1">
+                                <BookingStatusActions slug={slug} bookingId={b.id} locale={locale} />
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              {/* Pagination */}
+              {totalBookingsCount > pageSize && (
+                <div className="mt-6 flex items-center justify-center gap-3">
+                  {page > 1 && (
+                    <a
+                      href={`?tab=bookings${statusFilter !== 'all' ? `&status=${statusFilter}` : ''}&page=${page - 1}`}
+                      className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal"
+                    >
+                      {rtl ? '→' : '←'} {rtl ? 'السابق' : 'Previous'}
+                    </a>
+                  )}
+                  <span className="text-sm text-ink-muted">
+                    {page} / {Math.ceil(totalBookingsCount / pageSize)}
+                  </span>
+                  {page * pageSize < totalBookingsCount && (
+                    <a
+                      href={`?tab=bookings${statusFilter !== 'all' ? `&status=${statusFilter}` : ''}&page=${page + 1}`}
+                      className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal"
+                    >
+                      {rtl ? 'التالي' : 'Next'} {rtl ? '←' : '→'}
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

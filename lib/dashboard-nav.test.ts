@@ -29,7 +29,7 @@ const publicWebsiteLink = read('../components/public-website-link.tsx')
 const routes = read('../lib/routes.ts')
 
 describe('sidebar navigation order', () => {
-  const expectedOrder = ['overview', 'customers', 'services', 'team', 'website', 'settings']
+  const expectedOrder = ['overview', 'bookings', 'customers', 'services', 'team', 'website', 'settings']
 
   it('declares the nav items in the required order', () => {
     // Isolate the `const nav = [...]` block.
@@ -90,7 +90,7 @@ describe('sidebar navigation order', () => {
     const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
     const block = navModule.slice(start, end)
     const icons = block.match(/aria-hidden="true" className="h-4 w-4"/g) ?? []
-    expect(icons.length).toBe(6)
+    expect(icons.length).toBe(7)
   })
 })
 

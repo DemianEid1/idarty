@@ -1,4 +1,4 @@
-import { CalendarDays, Layers, LayoutDashboard, Settings2, Store, Users } from 'lucide-react'
+import { CalendarCheck, CalendarDays, Layers, LayoutDashboard, Settings2, Store, Users } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
 
 /**
@@ -19,19 +19,23 @@ export const dashboardCopy = {
     title: 'مساحة العمل',
     subtitle: 'نظرة هادئة على يومك وإدارة فريقك.',
     appointments: 'مواعيد اليوم',
+    bookings: 'الحجوزات',
     customers: 'العملاء',
     services: 'الخدمات',
     settings: 'الإعدادات',
     empty: 'لا توجد مواعيد اليوم بعد.',
+    emptyBookings: 'لا توجد حجوزات مسجلة بعد.',
   },
   en: {
     title: 'Workspace',
     subtitle: 'A calm view of your day and your team.',
     appointments: "Today's appointments",
+    bookings: 'Bookings',
     customers: 'Customers',
     services: 'Services',
     settings: 'Settings',
     empty: 'No appointments scheduled today.',
+    emptyBookings: 'No bookings recorded yet.',
   },
 } as const
 
@@ -45,6 +49,7 @@ export function buildDashboardNav(locale: Locale): DashboardNavItem[] {
   const t = dashboardCopy[locale]
   return [
     { id: 'overview', icon: <LayoutDashboard aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'نظرة عامة' : 'Overview' },
+    { id: 'bookings', icon: <CalendarCheck aria-hidden="true" className="h-4 w-4" />, label: t.bookings },
     { id: 'customers', icon: <Users aria-hidden="true" className="h-4 w-4" />, label: t.customers },
     { id: 'services', icon: <Layers aria-hidden="true" className="h-4 w-4" />, label: t.services },
     { id: 'team', icon: <CalendarDays aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule' },
