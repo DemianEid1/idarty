@@ -2,6 +2,7 @@ import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { and, eq } from 'drizzle-orm'
 import { Settings2 } from 'lucide-react'
+import Link from 'next/link'
 import { requireTenantAccess } from '@/lib/authz'
 import { db } from '@/lib/db'
 import { tenantTranslations } from '@/lib/db/schema'
@@ -88,9 +89,9 @@ export default async function DashboardLayout({
             the persistent layout so it never remounts on tab navigation. */}
         <aside className="hidden w-64 shrink-0 border-e border-border bg-paper lg:sticky lg:top-0 lg:h-screen lg:flex lg:flex-col">
           <div className="shrink-0 p-5">
-            <a href="/" className="flex items-center" aria-label={rtl ? 'إدارتي' : 'Idarty'}>
+            <Link href={`/${locale}/tenants/${slug}/dashboard`} className="flex items-center" aria-label={rtl ? 'إدارتي' : 'Idarty'}>
               <Logo locale={typedLocale} height={26} />
-            </a>
+            </Link>
           </div>
           <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-5 pb-5 text-sm">
             {nav.map((item) => (

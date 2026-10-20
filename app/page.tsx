@@ -11,6 +11,7 @@ import { ArrowRight, Building2, CalendarCheck2, Camera, Check, Clock3, Dumbbell,
 import { MobileNav } from '@/components/mobile-nav'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import { Logo } from '@/components/logo'
+import { authClient } from '@/lib/auth-client'
 
 const features = [
   {
@@ -49,7 +50,8 @@ const arabicFeatures = [
 ]
 
 export default function Page({ locale = 'ar' }: { locale?: 'ar' | 'en' }) {
-  const authPath = (path: 'login' | 'signup') => locale === 'ar' ? `/${path}` : `/${locale}/${path}`
+  const { data: session, isPending: authPending } = authClient.useSession()
+  const authPath = (path: 'login' | 'signup') => `/${locale}/${path}`
   const rtl = locale === 'ar'
 
   const copy = rtl ? {
@@ -59,6 +61,7 @@ export default function Page({ locale = 'ar' }: { locale?: 'ar' | 'en' }) {
     pricing: 'الأسعار',
     login: 'تسجيل الدخول',
     getStarted: 'ابدأ الآن',
+    dashboard: 'لوحة التحكم',
     eyebrow: 'طريقة أفضل لإدارة يومك',
     title: 'اجعل كل حجز أكثر سهولة.',
     description: 'يمنح idarty الشركات الخدمية مكاناً واحداً لإدارة المواعيد والفرق والعملاء، لتمنح وقتك لما يهم فعلاً.',
@@ -88,6 +91,7 @@ export default function Page({ locale = 'ar' }: { locale?: 'ar' | 'en' }) {
     pricing: 'Pricing',
     login: 'Log in',
     getStarted: 'Get started',
+    dashboard: 'Dashboard',
     eyebrow: 'A better way to run your day',
     title: 'Make every booking feel effortless.',
     description: 'idarty gives service businesses one simple place to manage appointments, teams, and customers — so you can spend more time on work that matters.',
@@ -180,19 +184,33 @@ export default function Page({ locale = 'ar' }: { locale?: 'ar' | 'en' }) {
 
           <div className="flex items-center gap-3">
             <LocaleSwitcher currentLocale={locale} />
-            <Link
-              href={authPath('login')}
-              className="hidden rounded-xl px-4 py-2.5 text-sm font-semibold text-ink-muted transition-colors hover:text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand-teal md:block"
-            >
-              {copy.login}
-            </Link>
-            <Link
-              href={authPath('signup')}
-              className="hidden md:inline-flex items-center gap-1.5 rounded-xl bg-brand-teal px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(15,118,110,0.25)] transition-all hover:bg-[#0d6560] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(15,118,110,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2"
-            >
-              {copy.getStarted}
-              <ArrowRight aria-hidden="true" className="size-3.5" />
-            </Link>
+            {authPending ? (
+              <div className="hidden h-10 w-24 animate-pulse rounded-xl bg-border/40 md:block" />
+            ) : session ? (
+              <Link
+                href={`/${locale}/dashboard`}
+                className="hidden rounded-xl bg-brand-teal px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(15,118,110,0.25)] transition-all hover:bg-[#0d6560] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(15,118,110,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 md:inline-flex md:items-center md:gap-1.5"
+              >
+                {copy.dashboard}
+                <ArrowRight aria-hidden="true" className="size-3.5" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href={authPath('login')}
+                  className="hidden rounded-xl px-4 py-2.5 text-sm font-semibold text-ink-muted transition-colors hover:text-ink outline-none focus-visible:ring-2 focus-visible:ring-brand-teal md:block"
+                >
+                  {copy.login}
+                </Link>
+                <Link
+                  href={authPath('signup')}
+                  className="hidden md:inline-flex items-center gap-1.5 rounded-xl bg-brand-teal px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(15,118,110,0.25)] transition-all hover:bg-[#0d6560] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(15,118,110,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2"
+                >
+                  {copy.getStarted}
+                  <ArrowRight aria-hidden="true" className="size-3.5" />
+                </Link>
+              </>
+            )}
             <MobileNav locale={locale} labels={{ open: rtl ? 'فتح القائمة' : 'Open navigation', close: rtl ? 'إغلاق القائمة' : 'Close navigation', links: [{ label: copy.how, href: '#how-it-works' }, { label: copy.features, href: '#features' }, { label: copy.businesses, href: '#businesses' }] }} />
           </div>
         </div>
@@ -584,8 +602,14 @@ export default function Page({ locale = 'ar' }: { locale?: 'ar' | 'en' }) {
           <div className="flex flex-wrap gap-x-8 gap-y-3 text-sm font-semibold text-ink-muted">
             <a href="#how-it-works" className="transition-colors hover:text-ink">{copy.featuresFooter}</a>
             <a href="#businesses" className="transition-colors hover:text-ink">{copy.businessesFooter}</a>
-            <Link href={authPath('login')} className="transition-colors hover:text-ink">{copy.login}</Link>
-            <Link href={authPath('signup')} className="transition-colors hover:text-brand-teal">{copy.getStarted}</Link>
+            {session ? (
+              <Link href={`/${locale}/dashboard`} className="transition-colors hover:text-ink">{copy.dashboard}</Link>
+            ) : (
+              <>
+                <Link href={authPath('login')} className="transition-colors hover:text-ink">{copy.login}</Link>
+                <Link href={authPath('signup')} className="transition-colors hover:text-brand-teal">{copy.getStarted}</Link>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2 text-sm font-semibold text-ink-lighter">

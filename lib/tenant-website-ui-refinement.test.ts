@@ -281,14 +281,19 @@ describe('footer layer C — copyright, social, attribution', () => {
     expect(texts).toContain(String(new Date().getFullYear()))
   })
 
-  it('preserves the Powered by Idarty attribution', () => {
+  it('preserves the Powered by Idarty attribution as NON-interactive text', () => {
     const nodes = render(configWith({}))
     const texts = footerNodes(nodes).map((n) => textOf(n.children)).join(' | ')
     expect(texts).toContain('مدعوم بواسطة')
-    const brand = footerNodes(nodes).find((n) => n.href === '/' && n.className.includes('text-brand-teal'))
+    expect(texts).toContain('إدارتي')
+    // The Idarty attribution must NOT be a link: the public tenant website is
+    // isolated from the Idarty landing page and dashboard, so nothing in the
+    // footer may navigate off the tenant's site.
+    const brand = footerNodes(nodes).find((n) => n.className.includes('text-brand-teal'))
     expect(brand).toBeTruthy()
-    expect(brand!.target).toBe('_blank')
-    expect(brand!.rel).toContain('noopener')
+    expect(brand!.href).toBeUndefined()
+    expect(brand!.target).toBeUndefined()
+    expect(brand!.rel).toBeUndefined()
   })
 
   it('renders social links only when a safe, enabled link exists', () => {

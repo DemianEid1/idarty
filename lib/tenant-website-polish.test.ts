@@ -148,40 +148,43 @@ describe('hero image loading priority', () => {
 })
 
 // ===========================================================================
-// 2. Footer branding link
+// 2. Footer branding (Idarty attribution)
 // ===========================================================================
-describe('footer branding link', () => {
+// The public tenant website is deliberately ISOLATED from the Idarty landing
+// page and dashboard, so the "Powered by Idarty" attribution must be plain,
+// non-interactive text — it is the tenant's site, not a doorway into Idarty.
+describe('footer branding is non-interactive', () => {
   const footerBrand = (locale: 'ar' | 'en' = 'ar') => {
     const nodes = flatten(TenantWebsite({ ...baseProps, locale, config: null }))
-    // The Idarty mark link: href="/" with the branding aria-label.
-    return nodes.find((n) => n.href === '/' && n.className.includes('text-brand-teal'))
+    // The Idarty mark: no href, teal brand text.
+    return nodes.find((n) => n.className.includes('text-brand-teal') && n.className.includes('font-semibold'))
   }
 
-  it('opens in a new tab', () => {
-    const link = footerBrand()
-    expect(link).toBeTruthy()
-    expect(link!.target).toBe('_blank')
+  it('is not rendered as a link (no href)', () => {
+    const brand = footerBrand()
+    expect(brand).toBeTruthy()
+    expect(brand!.href).toBeUndefined()
   })
 
-  it('carries a safe rel value', () => {
-    const link = footerBrand()
-    expect(link!.rel).toContain('noopener')
-    expect(link!.rel).toContain('noreferrer')
+  it('has no navigation target or rel attributes', () => {
+    const brand = footerBrand()
+    expect(brand!.target).toBeUndefined()
+    expect(brand!.rel).toBeUndefined()
   })
 
-  it('preserves the destination', () => {
-    expect(footerBrand()!.href).toBe('/')
+  it('is not an anchor element', () => {
+    const brand = footerBrand()
+    expect(String(brand!.type)).not.toBe('a')
+    expect(brand!.className).not.toContain('cursor-pointer')
   })
 
   it('preserves the branding text in both locales', () => {
-    const ar = flatten(TenantWebsite({ ...baseProps, locale: 'ar', config: null }))
-    const en = flatten(TenantWebsite({ ...baseProps, locale: 'en', config: null }))
-    const textOf = (nodes: Node[]) => {
-      const link = nodes.find((n) => n.href === '/' && n.className.includes('text-brand-teal'))!
-      return flatten(link.children).map((n) => n.children).filter((c) => typeof c === 'string')
+    const textOf = (locale: 'ar' | 'en') => {
+      const brand = footerBrand(locale)!
+      return flatten(brand.children).map((n) => n.children).filter((c) => typeof c === 'string')
     }
-    expect(textOf(ar)).toContain('إدارتي')
-    expect(textOf(en)).toContain('Idarty')
+    expect(textOf('ar')).toContain('إدارتي')
+    expect(textOf('en')).toContain('Idarty')
   })
 
   it('does not change service booking links', () => {
