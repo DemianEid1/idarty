@@ -818,16 +818,17 @@ export function TenantWebsite({
               </div>
               <div className="flex items-center justify-center gap-2">
                 <span className="text-xs text-[#a0a8b6]">{rtl ? 'مدعوم بواسطة' : 'Powered by'}</span>
-                <Link
-                  href="/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs font-semibold text-brand-teal cursor-pointer"
-                  aria-label="Idarty"
-                >
+                {/* Idarty attribution — deliberately NON-INTERACTIVE.
+                    The public tenant website must not offer a way back to the
+                    Idarty landing page or dashboard: this is the tenant's site,
+                    and its only navigation targets are the tenant's own pages,
+                    in-page sections, and external contact/social links. A
+                    <span> (not a Link/a) keeps the markup semantic and gives
+                    assistive tech nothing to treat as a control. */}
+                <span className="flex items-center gap-1 text-xs font-semibold text-brand-teal">
                   <LogoIcon height={14} />
                   <span>{rtl ? 'إدارتي' : 'Idarty'}</span>
-                </Link>
+                </span>
               </div>
             </div>
           </div>

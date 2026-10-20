@@ -42,10 +42,14 @@ describe('1. global logo destination and locale preservation', () => {
     expect(authForm).toContain('aria-label={locale === \'ar\' ? \'الرئيسية - إدارتي\' : \'Home - Idarty\'}')
   })
 
-  it('tenant website footer Idarty logo links to "/"', () => {
+  it('tenant website footer Idarty attribution is NON-interactive (isolation)', () => {
+    // The public tenant website is deliberately isolated from the Idarty
+    // landing page and dashboard: the footer attribution must not navigate.
     const footerSection = tenantWebsite.slice(tenantWebsite.indexOf('<footer'))
-    expect(footerSection).toContain('href="/"')
-    expect(footerSection).toContain('aria-label="Idarty"')
+    expect(footerSection).not.toContain('href="/"')
+    expect(footerSection).not.toContain('aria-label="Idarty"')
+    // The attribution is still rendered, as a <span>.
+    expect(footerSection).toContain("rtl ? 'إدارتي' : 'Idarty'")
   })
 })
 
