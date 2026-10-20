@@ -636,7 +636,7 @@ export function TenantWebsite({
         <header className="border-b border-[#e8ebf1] bg-paper/95 backdrop-blur-md">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4">
             <Link
-              href={`/${locale}`}
+              href={`/${locale}/tenants/${slug}`}
               className="flex min-w-0 items-center gap-2 text-base font-semibold cursor-pointer"
             >
               {logo ? (

@@ -171,6 +171,10 @@ export const auth = betterAuth({
       isPlatformAdmin: { type: 'boolean', required: false, defaultValue: false },
     },
   },
+  session: {
+    expiresIn: 3600 * 24 * 30, // 30 days
+    updateAge: 3600 * 24, // 24 hours
+  },
   ...(process.env.NODE_ENV === 'development' && baseURL.startsWith('https')
     ? {
         advanced: {
