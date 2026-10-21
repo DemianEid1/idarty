@@ -31,17 +31,34 @@ import { serviceFocalPoint, numericCrop } from '@/lib/image-focal-point'
 import { isBusinessType } from '@/lib/business-types'
 import { ALL_BOOKING_STATUSES, getStatusColor, getStatusLabel, statusColors, statusText } from '@/lib/booking-status'
 import { ManualBookingModal } from '@/components/manual-booking-modal'
+import { CalendarView, type CalendarBooking, type CalendarBookingItem } from '@/components/calendar-view'
+import {
+  bucketBookingsByDay,
+  formatDateParam,
+  getWeekDays,
+  getWeekRange,
+  isValidStaffId,
+  parseStartDate,
+} from '@/lib/calendar-helpers'
 
 
 export default async function TenantDashboard(props: {
   params: Promise<{ locale: Locale; slug: string }>
-  searchParams: Promise<{ tab?: string; page?: string; status?: string }>
+  searchParams: Promise<{
+    tab?: string
+    page?: string
+    status?: string
+    view?: string
+    start?: string
+    staff?: string
+  }>
 }) {
   const { locale, slug } = await props.params
   const searchParams = await props.searchParams
   const tab = searchParams.tab || 'overview'
   const page = Math.max(1, parseInt(searchParams.page ?? '1', 10) || 1)
   const statusFilter = searchParams.status || 'all'
+  const view = searchParams.view === 'calendar' ? 'calendar' : 'list'
   const pageSize = 12
   const rtl = locale === 'ar'
   const t = dashboardCopy[locale]
@@ -168,18 +185,63 @@ export default async function TenantDashboard(props: {
     }>
   >()
 
-  if (tab === 'bookings') {
-    const bookingConditions = [
-      eq(bookings.tenantId, access.tenant.id),
-      isNull(bookings.deletedAt),
-    ]
-    if (statusFilter && statusFilter !== 'all') {
-      bookingConditions.push(eq(bookings.status, statusFilter as any))
-    }
+  let calData: {
+    startDateParam: string
+    days: Date[]
+    bookingsByDayRecord: Record<string, CalendarBooking[]>
+    totalBookingsCount: number
+    validStaffId: string
+    statusParam: string
+  } | null = null
 
-    const [countResult, bRows] = await Promise.all([
-      db.select({ value: count() }).from(bookings).where(and(...bookingConditions)),
-      db
+  if (tab === 'bookings') {
+    if (view === 'calendar') {
+      const calStartDate = parseStartDate(searchParams.start)
+      const calStartDateParam = formatDateParam(calStartDate)
+      const calWeekRange = getWeekRange(calStartDate)
+      const calDays = getWeekDays(calStartDate)
+
+      const rawStaffId = isValidStaffId(searchParams.staff)
+      const validStaffId =
+        rawStaffId && staffRows.some((s) => s.id === rawStaffId) ? rawStaffId : ''
+
+      const calStatusParam = searchParams.status || 'active'
+      const calBookingConditions = [
+        eq(bookings.tenantId, access.tenant.id),
+        gte(bookings.startsAt, calWeekRange.start),
+        lt(bookings.startsAt, calWeekRange.end),
+        isNull(bookings.deletedAt),
+      ]
+
+      if (calStatusParam === 'all') {
+        // all statuses included
+      } else if (ALL_BOOKING_STATUSES.includes(calStatusParam as any)) {
+        calBookingConditions.push(eq(bookings.status, calStatusParam as any))
+      } else {
+        calBookingConditions.push(not(eq(bookings.status, 'cancelled')))
+      }
+
+      if (validStaffId) {
+        const staffBookingIds = await db
+          .selectDistinct({ bookingId: bookingItems.bookingId })
+          .from(bookingItems)
+          .where(
+            and(
+              eq(bookingItems.tenantId, access.tenant.id),
+              eq(bookingItems.staffId, validStaffId)
+            )
+          )
+        const ids = staffBookingIds.map((r) => r.bookingId)
+        if (ids.length === 0) {
+          calBookingConditions.push(
+            inArray(bookings.id, ['00000000-0000-0000-0000-000000000000'])
+          )
+        } else {
+          calBookingConditions.push(inArray(bookings.id, ids))
+        }
+      }
+
+      const calBookingRows = await db
         .select({
           id: bookings.id,
           startsAt: bookings.startsAt,
@@ -196,52 +258,199 @@ export default async function TenantDashboard(props: {
         })
         .from(bookings)
         .innerJoin(customers, eq(customers.id, bookings.customerId))
-        .where(and(...bookingConditions))
-        .orderBy(desc(bookings.startsAt))
-        .limit(pageSize)
-        .offset((page - 1) * pageSize),
-    ])
+        .where(and(...calBookingConditions))
+        .orderBy(bookings.startsAt)
 
-    totalBookingsCount = countResult[0]?.value ?? 0
-    bookingListRows = bRows
+      const calItemsByBooking = new Map<string, CalendarBookingItem[]>()
+      if (calBookingRows.length > 0) {
+        const bIds = calBookingRows.map((b) => b.id)
+        const rawItems = await db
+          .select({
+            id: bookingItems.id,
+            bookingId: bookingItems.bookingId,
+            startsAt: bookingItems.startsAt,
+            endsAt: bookingItems.endsAt,
+            priceAmount: bookingItems.priceAmount,
+            serviceName: serviceTranslations.name,
+            fallbackServiceName: fallbackServiceTranslations.name,
+            durationMin: services.durationMin,
+            staffName: staffTranslations.name,
+            fallbackStaffName: fallbackStaffTranslations.name,
+          })
+          .from(bookingItems)
+          .leftJoin(services, eq(services.id, bookingItems.serviceId))
+          .leftJoin(
+            serviceTranslations,
+            and(
+              eq(serviceTranslations.serviceId, services.id),
+              eq(serviceTranslations.locale, locale)
+            )
+          )
+          .leftJoin(
+            fallbackServiceTranslations,
+            and(
+              eq(fallbackServiceTranslations.serviceId, services.id),
+              eq(fallbackServiceTranslations.locale, fallbackLocale)
+            )
+          )
+          .leftJoin(staff, eq(staff.id, bookingItems.staffId))
+          .leftJoin(
+            staffTranslations,
+            and(
+              eq(staffTranslations.staffId, staff.id),
+              eq(staffTranslations.locale, locale)
+            )
+          )
+          .leftJoin(
+            fallbackStaffTranslations,
+            and(
+              eq(fallbackStaffTranslations.staffId, staff.id),
+              eq(fallbackStaffTranslations.locale, fallbackLocale)
+            )
+          )
+          .where(
+            and(
+              eq(bookingItems.tenantId, access.tenant.id),
+              inArray(bookingItems.bookingId, bIds)
+            )
+          )
+          .orderBy(bookingItems.sortOrder, bookingItems.startsAt)
 
-    if (bRows.length > 0) {
-      const bIds = bRows.map((b) => b.id)
-      const rawItems = await db
-        .select({
-          id: bookingItems.id,
-          bookingId: bookingItems.bookingId,
-          startsAt: bookingItems.startsAt,
-          endsAt: bookingItems.endsAt,
-          priceAmount: bookingItems.priceAmount,
-          serviceName: serviceTranslations.name,
-          fallbackServiceName: fallbackServiceTranslations.name,
-          durationMin: services.durationMin,
-          staffName: staffTranslations.name,
-          fallbackStaffName: fallbackStaffTranslations.name,
-        })
-        .from(bookingItems)
-        .leftJoin(services, eq(services.id, bookingItems.serviceId))
-        .leftJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale)))
-        .leftJoin(fallbackServiceTranslations, and(eq(fallbackServiceTranslations.serviceId, services.id), eq(fallbackServiceTranslations.locale, fallbackLocale)))
-        .leftJoin(staff, eq(staff.id, bookingItems.staffId))
-        .leftJoin(staffTranslations, and(eq(staffTranslations.staffId, staff.id), eq(staffTranslations.locale, locale)))
-        .leftJoin(fallbackStaffTranslations, and(eq(fallbackStaffTranslations.staffId, staff.id), eq(fallbackStaffTranslations.locale, fallbackLocale)))
-        .where(and(eq(bookingItems.tenantId, access.tenant.id), inArray(bookingItems.bookingId, bIds)))
-        .orderBy(bookingItems.sortOrder, bookingItems.startsAt)
+        for (const item of rawItems) {
+          const list = calItemsByBooking.get(item.bookingId) ?? []
+          list.push({
+            id: item.id,
+            serviceName:
+              item.serviceName ||
+              item.fallbackServiceName ||
+              (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
+            staffName:
+              item.staffName ||
+              item.fallbackStaffName ||
+              (rtl ? 'عضو فريق' : 'Staff member'),
+            durationMin: item.durationMin ?? 0,
+            priceAmount: String(item.priceAmount ?? '0'),
+            startsAt: item.startsAt,
+            endsAt: item.endsAt,
+          })
+          calItemsByBooking.set(item.bookingId, list)
+        }
+      }
 
-      for (const item of rawItems) {
-        const list = itemsByBooking.get(item.bookingId) ?? []
-        list.push({
-          id: item.id,
-          serviceName: item.serviceName || item.fallbackServiceName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
-          staffName: item.staffName || item.fallbackStaffName || (rtl ? 'عضو فريق' : 'Staff member'),
-          durationMin: item.durationMin ?? 0,
-          priceAmount: String(item.priceAmount ?? '0'),
-          startsAt: item.startsAt,
-          endsAt: item.endsAt,
-        })
-        itemsByBooking.set(item.bookingId, list)
+      const calAggregatedBookings: CalendarBooking[] = calBookingRows.map((b) => {
+        const items = calItemsByBooking.get(b.id) ?? []
+        const totalPrice = items.reduce(
+          (sum, it) => sum + (parseFloat(it.priceAmount) || 0),
+          0
+        )
+        return {
+          id: b.id,
+          startsAt: b.startsAt,
+          endsAt: b.endsAt,
+          status: b.status,
+          source: b.source,
+          customerName: b.customerName,
+          customerPhone: b.customerPhone,
+          customerEmail: b.customerEmail,
+          customerNote: b.customerNote,
+          internalNote: b.internalNote,
+          cancelReason: b.cancelReason,
+          createdAt: b.createdAt,
+          items,
+          totalPrice,
+        }
+      })
+
+      const bucketMap = bucketBookingsByDay(calDays, calAggregatedBookings)
+      const calBookingsByDayRecord: Record<string, CalendarBooking[]> = {}
+      for (const day of calDays) {
+        const p = formatDateParam(day)
+        calBookingsByDayRecord[p] = bucketMap.get(p) ?? []
+      }
+
+      calData = {
+        startDateParam: calStartDateParam,
+        days: calDays,
+        bookingsByDayRecord: calBookingsByDayRecord,
+        totalBookingsCount: calAggregatedBookings.length,
+        validStaffId,
+        statusParam: calStatusParam,
+      }
+    } else {
+      const bookingConditions = [
+        eq(bookings.tenantId, access.tenant.id),
+        isNull(bookings.deletedAt),
+      ]
+      if (statusFilter && statusFilter !== 'all') {
+        bookingConditions.push(eq(bookings.status, statusFilter as any))
+      }
+
+      const [countResult, bRows] = await Promise.all([
+        db.select({ value: count() }).from(bookings).where(and(...bookingConditions)),
+        db
+          .select({
+            id: bookings.id,
+            startsAt: bookings.startsAt,
+            endsAt: bookings.endsAt,
+            status: bookings.status,
+            source: bookings.source,
+            customerNote: bookings.customerNote,
+            internalNote: bookings.internalNote,
+            cancelReason: bookings.cancelReason,
+            createdAt: bookings.createdAt,
+            customerName: customers.fullName,
+            customerPhone: customers.phoneE164,
+            customerEmail: customers.email,
+          })
+          .from(bookings)
+          .innerJoin(customers, eq(customers.id, bookings.customerId))
+          .where(and(...bookingConditions))
+          .orderBy(desc(bookings.startsAt))
+          .limit(pageSize)
+          .offset((page - 1) * pageSize),
+      ])
+
+      totalBookingsCount = countResult[0]?.value ?? 0
+      bookingListRows = bRows
+
+      if (bRows.length > 0) {
+        const bIds = bRows.map((b) => b.id)
+        const rawItems = await db
+          .select({
+            id: bookingItems.id,
+            bookingId: bookingItems.bookingId,
+            startsAt: bookingItems.startsAt,
+            endsAt: bookingItems.endsAt,
+            priceAmount: bookingItems.priceAmount,
+            serviceName: serviceTranslations.name,
+            fallbackServiceName: fallbackServiceTranslations.name,
+            durationMin: services.durationMin,
+            staffName: staffTranslations.name,
+            fallbackStaffName: fallbackStaffTranslations.name,
+          })
+          .from(bookingItems)
+          .leftJoin(services, eq(services.id, bookingItems.serviceId))
+          .leftJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale)))
+          .leftJoin(fallbackServiceTranslations, and(eq(fallbackServiceTranslations.serviceId, services.id), eq(fallbackServiceTranslations.locale, fallbackLocale)))
+          .leftJoin(staff, eq(staff.id, bookingItems.staffId))
+          .leftJoin(staffTranslations, and(eq(staffTranslations.staffId, staff.id), eq(staffTranslations.locale, locale)))
+          .leftJoin(fallbackStaffTranslations, and(eq(fallbackStaffTranslations.staffId, staff.id), eq(fallbackStaffTranslations.locale, fallbackLocale)))
+          .where(and(eq(bookingItems.tenantId, access.tenant.id), inArray(bookingItems.bookingId, bIds)))
+          .orderBy(bookingItems.sortOrder, bookingItems.startsAt)
+
+        for (const item of rawItems) {
+          const list = itemsByBooking.get(item.bookingId) ?? []
+          list.push({
+            id: item.id,
+            serviceName: item.serviceName || item.fallbackServiceName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
+            staffName: item.staffName || item.fallbackStaffName || (rtl ? 'عضو فريق' : 'Staff member'),
+            durationMin: item.durationMin ?? 0,
+            priceAmount: String(item.priceAmount ?? '0'),
+            startsAt: item.startsAt,
+            endsAt: item.endsAt,
+          })
+          itemsByBooking.set(item.bookingId, list)
+        }
       }
     }
   }
@@ -370,8 +579,50 @@ export default async function TenantDashboard(props: {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">
-                    {totalBookingsCount} {rtl ? 'حجز' : 'bookings'}
+                    {view === 'calendar' ? (calData?.totalBookingsCount ?? 0) : totalBookingsCount} {rtl ? 'حجز' : 'bookings'}
                   </span>
+                  {/* Option 1: Segmented View Switcher (List vs Calendar) */}
+                  <div
+                    role="group"
+                    aria-label={rtl ? 'طريقة عرض الحجوزات' : 'Bookings view'}
+                    className="inline-flex items-center rounded-xl border border-border bg-[#f0f2f5] p-1 text-xs font-semibold"
+                  >
+                    {view === 'list' ? (
+                      <span
+                        aria-current="page"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[#172033] shadow-xs cursor-default"
+                      >
+                        <ClipboardList aria-hidden="true" className="h-3.5 w-3.5 text-brand-teal" />
+                        <span>{rtl ? 'قائمة' : 'List'}</span>
+                      </span>
+                    ) : (
+                      <a
+                        href={`?tab=bookings${statusFilter && statusFilter !== 'all' ? `&status=${statusFilter}` : ''}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-ink-muted transition hover:text-[#172033]"
+                      >
+                        <ClipboardList aria-hidden="true" className="h-3.5 w-3.5" />
+                        <span>{rtl ? 'قائمة' : 'List'}</span>
+                      </a>
+                    )}
+
+                    {view === 'calendar' ? (
+                      <span
+                        aria-current="page"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[#172033] shadow-xs cursor-default"
+                      >
+                        <CalendarDays aria-hidden="true" className="h-3.5 w-3.5 text-brand-teal" />
+                        <span>{rtl ? 'تقويم' : 'Calendar'}</span>
+                      </span>
+                    ) : (
+                      <a
+                        href={`?tab=bookings&view=calendar${statusFilter && statusFilter !== 'all' ? `&status=${statusFilter}` : ''}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-ink-muted transition hover:text-[#172033]"
+                      >
+                        <CalendarDays aria-hidden="true" className="h-3.5 w-3.5" />
+                        <span>{rtl ? 'تقويم' : 'Calendar'}</span>
+                      </a>
+                    )}
+                  </div>
                   <ManualBookingModal
                     slug={slug}
                     locale={locale}
@@ -391,7 +642,36 @@ export default async function TenantDashboard(props: {
                 </div>
               </div>
 
-              {/* Status Filter Tabs / Chips */}
+              {view === 'calendar' && calData ? (
+                <div className="mt-6">
+                  <CalendarView
+                    slug={slug}
+                    locale={locale}
+                    currency={access.tenant.currency}
+                    startDate={calData.startDateParam}
+                    days={calData.days.map((d) => ({ date: d, dateParam: formatDateParam(d) }))}
+                    bookingsByDay={calData.bookingsByDayRecord}
+                    totalBookingsCount={calData.totalBookingsCount}
+                    currentStaffFilter={calData.validStaffId}
+                    currentStatusFilter={calData.statusParam}
+                    staffList={staffRows.map((st) => ({
+                      id: st.id,
+                      name: st.name || st.fallbackName || (rtl ? 'عضو فريق' : 'Staff member'),
+                    }))}
+                    servicesList={serviceRows.map((s) => ({
+                      id: s.id,
+                      name: s.name || s.fallbackName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
+                      durationMin: s.durationMin,
+                      priceAmount: String(s.priceAmount),
+                    }))}
+                    assignmentsList={assignmentRows}
+                    canViewInternalNotes={true}
+                    hideNewBookingButton={true}
+                  />
+                </div>
+              ) : (
+                <>
+                  {/* Status Filter Tabs / Chips */}
               <div className="mt-5 flex flex-wrap items-center gap-2 border-b border-border pb-4">
                 <a
                   href="?tab=bookings"
@@ -642,6 +922,8 @@ export default async function TenantDashboard(props: {
                     </a>
                   )}
                 </div>
+              )}
+                </>
               )}
             </div>
           </div>

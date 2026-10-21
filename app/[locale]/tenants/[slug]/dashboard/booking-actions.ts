@@ -36,7 +36,10 @@ export async function cancelBooking(input: z.infer<typeof inputSchema>) {
       idempotencyKey: `booking-cancellation/${booking[0].id}/${new Date().toISOString()}`,
     }).catch((error) => console.error('[idarty] booking cancellation failed', error))
   }
-  if (result.length) revalidatePath(`/${data.slug}/dashboard`)
+  if (result.length) {
+    revalidatePath('/[locale]/tenants/[slug]/dashboard', 'page')
+    revalidatePath('/[locale]/tenants/[slug]/calendar', 'page')
+  }
   return result.length ? { ok: true as const } : { ok: false as const, message: 'Booking is no longer active' }
 }
 
@@ -53,7 +56,10 @@ export async function markNoShow(input: z.infer<typeof inputSchema>) {
       tenantId: access.tenant.id,
     }, await headers())
   }
-  if (result.length) revalidatePath(`/${data.slug}/dashboard`)
+  if (result.length) {
+    revalidatePath('/[locale]/tenants/[slug]/dashboard', 'page')
+    revalidatePath('/[locale]/tenants/[slug]/calendar', 'page')
+  }
   return result.length ? { ok: true as const } : { ok: false as const, message: 'Booking is no longer active' }
 }
 
@@ -274,7 +280,10 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
       await headers()
     )
 
-    revalidatePath(`/${data.slug}/dashboard`)
+    revalidatePath(`/${data.locale}/tenants/${data.slug}/dashboard`)
+    revalidatePath(`/${data.locale}/tenants/${data.slug}/calendar`)
+    revalidatePath('/[locale]/tenants/[slug]/dashboard', 'page')
+    revalidatePath('/[locale]/tenants/[slug]/calendar', 'page')
     return { ok: true as const, bookingId: result.id }
   } catch (error: any) {
     if (error.code === '23P01') {

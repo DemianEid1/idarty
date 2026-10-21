@@ -93,4 +93,17 @@ describe('dashboard bookings tab - security and query isolation', () => {
     expect(dashboardPage).toContain("statusFilter !== 'all'")
     expect(dashboardPage).toContain('eq(bookings.status, statusFilter as any)')
   })
+
+  it('renders Option 1 segmented view switcher (List vs Calendar) in the bookings header', () => {
+    expect(dashboardPage).toContain('aria-label={rtl ? \'طريقة عرض الحجوزات\' : \'Bookings view\'}')
+    expect(dashboardPage).toContain('href={`?tab=bookings&view=calendar')
+    expect(dashboardPage).toContain('ClipboardList')
+    expect(dashboardPage).toContain('CalendarDays')
+  })
+
+  it('embeds CalendarView within the dashboard when view === calendar', () => {
+    expect(dashboardPage).toContain("view === 'calendar'")
+    expect(dashboardPage).toContain('<CalendarView')
+    expect(dashboardPage).toContain('hideNewBookingButton={true}')
+  })
 })

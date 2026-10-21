@@ -52,6 +52,7 @@ export async function rescheduleBooking(input: z.infer<typeof inputSchema>) {
       idempotencyKey: `booking-reschedule/${data.bookingId}/${start.toISOString()}`,
     }).catch((error) => console.error('[idarty] booking reschedule failed', error))
   }
-  revalidatePath(`/${data.slug}/dashboard`)
+  revalidatePath('/[locale]/tenants/[slug]/dashboard', 'page')
+  revalidatePath('/[locale]/tenants/[slug]/calendar', 'page')
   return { ok: true as const }
 }
