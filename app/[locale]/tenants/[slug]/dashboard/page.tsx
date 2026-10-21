@@ -30,6 +30,7 @@ import { ServiceImageForm } from '@/components/service-image-form'
 import { serviceFocalPoint, numericCrop } from '@/lib/image-focal-point'
 import { isBusinessType } from '@/lib/business-types'
 import { ALL_BOOKING_STATUSES, getStatusColor, getStatusLabel, statusColors, statusText } from '@/lib/booking-status'
+import { ManualBookingModal } from '@/components/manual-booking-modal'
 
 
 export default async function TenantDashboard(props: {
@@ -367,9 +368,27 @@ export default async function TenantDashboard(props: {
                       : 'View and manage all bookings and their associated services.'}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">
-                  {totalBookingsCount} {rtl ? 'حجز' : 'bookings'}
-                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">
+                    {totalBookingsCount} {rtl ? 'حجز' : 'bookings'}
+                  </span>
+                  <ManualBookingModal
+                    slug={slug}
+                    locale={locale}
+                    currency={access.tenant.currency}
+                    services={serviceRows.map((s) => ({
+                      id: s.id,
+                      name: s.name || s.fallbackName || (rtl ? 'خدمة' : 'Service'),
+                      durationMin: s.durationMin,
+                      priceAmount: String(s.priceAmount),
+                    }))}
+                    staff={staffRows.map((st) => ({
+                      id: st.id,
+                      name: st.name || st.fallbackName || (rtl ? 'عضو فريق' : 'Team member'),
+                    }))}
+                    assignments={assignmentRows}
+                  />
+                </div>
               </div>
 
               {/* Status Filter Tabs / Chips */}

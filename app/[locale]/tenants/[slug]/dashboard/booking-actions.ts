@@ -2,10 +2,10 @@
 
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, gt, isNull, lt, not } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { bookings, customers } from '@/lib/db/schema'
+import { bookingItems, bookings, customers, services, staff, staffServices } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { logAudit } from '@/lib/audit'
 
@@ -55,4 +55,242 @@ export async function markNoShow(input: z.infer<typeof inputSchema>) {
   }
   if (result.length) revalidatePath(`/${data.slug}/dashboard`)
   return result.length ? { ok: true as const } : { ok: false as const, message: 'Booking is no longer active' }
+}
+
+const manualBookingSchema = z.object({
+  slug: z.string().min(2),
+  locale: z.enum(['ar', 'en']),
+  customerName: z.string().trim().min(2).max(120),
+  customerPhone: z.string().trim().min(6).max(30),
+  customerEmail: z.string().email().optional().or(z.literal('')),
+  serviceId: z.string().uuid(),
+  staffId: z.string().uuid().optional().or(z.literal('')),
+  startsAt: z.string().datetime({ offset: true }),
+  customerNote: z.string().max(500).optional().or(z.literal('')),
+  internalNote: z.string().max(500).optional().or(z.literal('')),
+})
+
+export async function createManualBooking(input: z.infer<typeof manualBookingSchema>) {
+  const data = manualBookingSchema.parse(input)
+  const access = await requireTenantAccess(await headers(), data.slug, 'receptionist')
+
+  const service = await db.query.services.findFirst({
+    where: and(
+      eq(services.id, data.serviceId),
+      eq(services.tenantId, access.tenant.id),
+      eq(services.isActive, true)
+    ),
+  })
+  if (!service) {
+    return {
+      ok: false as const,
+      message: data.locale === 'ar' ? 'الخدمة المختارة غير متوفرة.' : 'Selected service is not available.',
+    }
+  }
+
+  let assignedStaffId = data.staffId || ''
+  if (assignedStaffId) {
+    const staffMember = await db.query.staff.findFirst({
+      where: and(
+        eq(staff.id, assignedStaffId),
+        eq(staff.tenantId, access.tenant.id),
+        eq(staff.isActive, true),
+        isNull(staff.deletedAt)
+      ),
+    })
+    if (!staffMember) {
+      return {
+        ok: false as const,
+        message: data.locale === 'ar' ? 'عضو الفريق المحدد غير موجود.' : 'Selected staff member not found.',
+      }
+    }
+  } else {
+    const available = await db
+      .select({ id: staff.id })
+      .from(staff)
+      .innerJoin(staffServices, eq(staffServices.staffId, staff.id))
+      .where(
+        and(
+          eq(staff.tenantId, access.tenant.id),
+          eq(staff.isActive, true),
+          eq(staffServices.serviceId, service.id),
+          isNull(staff.deletedAt)
+        )
+      )
+    if (available.length > 0) {
+      assignedStaffId = available[0].id
+    } else {
+      const anyStaff = await db
+        .select({ id: staff.id })
+        .from(staff)
+        .where(
+          and(
+            eq(staff.tenantId, access.tenant.id),
+            eq(staff.isActive, true),
+            isNull(staff.deletedAt)
+          )
+        )
+        .orderBy(staff.sortOrder)
+        .limit(1)
+      if (anyStaff.length > 0) {
+        assignedStaffId = anyStaff[0].id
+      }
+    }
+  }
+
+  if (!assignedStaffId) {
+    return {
+      ok: false as const,
+      message: data.locale === 'ar'
+        ? 'يرجى إضافة عضو فريق أولاً لتعيين الموعد.'
+        : 'Please add a team member first to assign bookings.',
+    }
+  }
+
+  const start = new Date(data.startsAt)
+  if (Number.isNaN(start.getTime())) {
+    return {
+      ok: false as const,
+      message: data.locale === 'ar' ? 'تاريخ ووقت غير صالح.' : 'Invalid date and time.',
+    }
+  }
+  const end = new Date(start.getTime() + service.durationMin * 60_000)
+  const blockStart = new Date(start.getTime() - service.bufferBeforeMin * 60_000)
+  const blockEnd = new Date(end.getTime() + service.bufferAfterMin * 60_000)
+
+  // Check for conflicts
+  const conflict = await db
+    .select({ id: bookingItems.id })
+    .from(bookingItems)
+    .innerJoin(bookings, eq(bookings.id, bookingItems.bookingId))
+    .where(
+      and(
+        eq(bookingItems.tenantId, access.tenant.id),
+        eq(bookingItems.staffId, assignedStaffId),
+        not(eq(bookings.status, 'cancelled')),
+        lt(bookingItems.blockStartsAt, blockEnd),
+        gt(bookingItems.blockEndsAt, blockStart)
+      )
+    )
+    .limit(1)
+
+  if (conflict.length > 0) {
+    return {
+      ok: false as const,
+      message: data.locale === 'ar'
+        ? 'عضو الفريق لديه موعد آخر متعارض في هذا التوقيت.'
+        : 'The selected team member has an overlapping appointment at this time.',
+    }
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const cleanPhone = data.customerPhone.replace(/[\s-]/g, '')
+      const phoneE164 = /^01[0125]\d{8}$/.test(cleanPhone) ? '+2' + cleanPhone : cleanPhone
+
+      let customerId: string
+      const existingCustomer = await tx.query.customers.findFirst({
+        where: and(
+          eq(customers.tenantId, access.tenant.id),
+          eq(customers.phoneE164, phoneE164),
+          isNull(customers.deletedAt)
+        ),
+      })
+
+      if (existingCustomer) {
+        await tx
+          .update(customers)
+          .set({
+            fullName: data.customerName,
+            nameNormalized: data.customerName.toLowerCase(),
+            email: data.customerEmail || existingCustomer.email,
+            updatedAt: new Date(),
+          })
+          .where(eq(customers.id, existingCustomer.id))
+        customerId = existingCustomer.id
+      } else {
+        const [inserted] = await tx
+          .insert(customers)
+          .values({
+            tenantId: access.tenant.id,
+            fullName: data.customerName,
+            nameNormalized: data.customerName.toLowerCase(),
+            phoneE164,
+            email: data.customerEmail || null,
+            preferredLocale: data.locale,
+          })
+          .returning({ id: customers.id })
+        customerId = inserted.id
+      }
+
+      const idempotencyKey = `dash-${access.tenant.id}-${phoneE164}-${start.toISOString()}-${Date.now()}`
+
+      const [booking] = await tx
+        .insert(bookings)
+        .values({
+          tenantId: access.tenant.id,
+          customerId,
+          source: 'dashboard',
+          status: 'confirmed',
+          locale: data.locale,
+          idempotencyKey,
+          startsAt: start,
+          endsAt: end,
+          customerNote: data.customerNote || null,
+          internalNote: data.internalNote || null,
+          createdByUserId: access.session.user.id,
+        })
+        .returning({ id: bookings.id })
+
+      await tx.insert(bookingItems).values({
+        tenantId: access.tenant.id,
+        bookingId: booking.id,
+        serviceId: service.id,
+        staffId: assignedStaffId,
+        startsAt: start,
+        endsAt: end,
+        blockStartsAt: blockStart,
+        blockEndsAt: blockEnd,
+        priceAmount: service.priceAmount,
+      })
+
+      return booking
+    })
+
+    await logAudit(
+      {
+        actorUserId: access.session.user.id,
+        action: 'booking.created_manually',
+        entityType: 'booking',
+        entityId: result.id,
+        tenantId: access.tenant.id,
+        metadata: {
+          source: 'dashboard',
+          serviceId: service.id,
+          staffId: assignedStaffId,
+          startsAt: start.toISOString(),
+        },
+      },
+      await headers()
+    )
+
+    revalidatePath(`/${data.slug}/dashboard`)
+    return { ok: true as const, bookingId: result.id }
+  } catch (error: any) {
+    if (error.code === '23P01') {
+      return {
+        ok: false as const,
+        message: data.locale === 'ar'
+          ? 'هذا التوقيت تم حجزه للتو. يرجى اختيار موعد آخر.'
+          : 'This time slot was just booked. Please choose another time.',
+      }
+    }
+    console.error('[idarty] manual booking creation error:', error)
+    return {
+      ok: false as const,
+      message: data.locale === 'ar'
+        ? 'حدث خطأ أثناء إنشاء الحجز. يرجى المحاولة مرة أخرى.'
+        : 'An error occurred while creating the booking. Please try again.',
+    }
+  }
 }
