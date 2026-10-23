@@ -33,7 +33,6 @@ try {
   await client.query(`INSERT INTO service_translations (tenant_id, service_id, locale, name, description) VALUES ($1, $2, 'ar', 'استشارة أولية', 'جلسة تعريفية مع الفريق المختص.'), ($1, $3, 'ar', 'جلسة متابعة', 'متابعة عملية وهادئة لخطة الرعاية.'), ($1, $2, 'en', 'Initial consultation', 'A calm first session with our care team.'), ($1, $3, 'en', 'Follow-up session', 'A focused follow-up for your care plan.') ON CONFLICT (service_id, locale) DO NOTHING`, [currentTenantId, serviceOne, serviceTwo])
   const staffId = randomUUID()
   await client.query(`INSERT INTO staff (id, tenant_id, email, is_active) VALUES ($1, $2, 'doctor@nile-wellness.idarty.com', true) ON CONFLICT (id) DO NOTHING`, [staffId, currentTenantId])
-  await client.query(`INSERT INTO staff_services (tenant_id, staff_id, service_id) VALUES ($1, $2, $3), ($1, $2, $4) ON CONFLICT DO NOTHING`, [currentTenantId, staffId, serviceOne, serviceTwo])
   for (let weekday = 0; weekday < 6; weekday++) {
     await client.query(`INSERT INTO working_hours (tenant_id, staff_id, weekday, start_time, end_time) SELECT $1, $2, $3, '09:00', '17:00' WHERE NOT EXISTS (SELECT 1 FROM working_hours WHERE tenant_id = $1 AND staff_id = $2 AND weekday = $3)`, [currentTenantId, staffId, weekday])
   }

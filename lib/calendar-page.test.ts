@@ -31,7 +31,6 @@ describe('calendar page: authorization and tenant scoping contracts', () => {
     expect(calendarPage).toContain('eq(staff.tenantId, access.tenant.id)')
     expect(calendarPage).toContain('eq(staff.isActive, true)')
     expect(calendarPage).toContain('isNull(staff.deletedAt)')
-    expect(calendarPage).toContain('eq(staffServices.tenantId, access.tenant.id)')
   })
 })
 

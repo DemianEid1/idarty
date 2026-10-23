@@ -4,7 +4,7 @@ import { revalidatePath, revalidateTag } from 'next/cache'
 import { z } from 'zod'
 import { and, count, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { bookingItems, serviceTranslations, services, staff, staffServices } from '@/lib/db/schema'
+import { bookingItems, serviceTranslations, services, staff } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { headers } from 'next/headers'
 import { logAudit } from '@/lib/audit'
@@ -112,19 +112,6 @@ export async function createService(formData: FormData) {
         description: input.description ?? null,
       }))
     )
-    const activeStaff = await tx
-      .select({ id: staff.id })
-      .from(staff)
-      .where(and(eq(staff.tenantId, access.tenant.id), eq(staff.isActive, true)))
-    if (activeStaff.length > 0) {
-      await tx.insert(staffServices).values(
-        activeStaff.map((person) => ({
-          tenantId: access.tenant.id,
-          staffId: person.id,
-          serviceId: created.id,
-        }))
-      )
-    }
     return created
   })
   revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)

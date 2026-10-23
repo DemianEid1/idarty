@@ -52,12 +52,11 @@ describe('manual booking modal UI contract', () => {
     expect(modalCode).toContain("rtl ? 'حجز يدوي جديد' : 'New Booking'")
     expect(modalCode).toContain("rtl ? 'تسجيل حجز يدوي' : 'New Manual Booking'")
     expect(modalCode).toContain("rtl ? 'بيانات العميل' : 'Customer Details'")
-    expect(modalCode).toContain("rtl ? 'الخدمة والموظف' : 'Service & Staff'")
+    expect(modalCode).toContain("rtl ? 'الخدمة والموعد' : 'Service & Time'")
   })
 
-  it('filters staff by service assignments dynamically', () => {
-    expect(modalCode).toContain('a.serviceId === selectedServiceId')
-    expect(modalCode).toContain('eligibleStaff')
+  it('does not expose employee assignment selector in manual booking', () => {
+    expect(modalCode).not.toContain("rtl ? 'الموظف المسند إليه' : 'Assigned Staff'")
   })
 
   it('is integrated in dashboard page bookings tab', () => {

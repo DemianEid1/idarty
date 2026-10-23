@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, gt, isNull, lt, not } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { bookingItems, bookings, customers, services, staff, staffServices } from '@/lib/db/schema'
+import { bookingItems, bookings, customers, services, staff } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { logAudit } from '@/lib/audit'
 
@@ -111,36 +111,20 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
       }
     }
   } else {
-    const available = await db
+    const anyStaff = await db
       .select({ id: staff.id })
       .from(staff)
-      .innerJoin(staffServices, eq(staffServices.staffId, staff.id))
       .where(
         and(
           eq(staff.tenantId, access.tenant.id),
           eq(staff.isActive, true),
-          eq(staffServices.serviceId, service.id),
           isNull(staff.deletedAt)
         )
       )
-    if (available.length > 0) {
-      assignedStaffId = available[0].id
-    } else {
-      const anyStaff = await db
-        .select({ id: staff.id })
-        .from(staff)
-        .where(
-          and(
-            eq(staff.tenantId, access.tenant.id),
-            eq(staff.isActive, true),
-            isNull(staff.deletedAt)
-          )
-        )
-        .orderBy(staff.sortOrder)
-        .limit(1)
-      if (anyStaff.length > 0) {
-        assignedStaffId = anyStaff[0].id
-      }
+      .orderBy(staff.sortOrder)
+      .limit(1)
+    if (anyStaff.length > 0) {
+      assignedStaffId = anyStaff[0].id
     }
   }
 

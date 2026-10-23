@@ -20,10 +20,6 @@ export interface ManualBookingModalProps {
     id: string
     name: string
   }>
-  assignments?: Array<{
-    staffId: string
-    serviceId: string
-  }>
 }
 
 function getDefaultDateTime(): string {
@@ -40,7 +36,6 @@ export function ManualBookingModal({
   currency,
   services,
   staff,
-  assignments = [],
 }: ManualBookingModalProps) {
   const rtl = locale === 'ar'
   const { toast } = useToast()
@@ -57,15 +52,8 @@ export function ManualBookingModal({
   const [customerNote, setCustomerNote] = useState('')
   const [internalNote, setInternalNote] = useState('')
 
-  // Filter staff based on selected service assignments
-  const eligibleStaff = useMemo(() => {
-    if (!selectedServiceId || assignments.length === 0) return staff
-    const staffIdsWithService = assignments
-      .filter((a) => a.serviceId === selectedServiceId)
-      .map((a) => a.staffId)
-    if (staffIdsWithService.length === 0) return staff
-    return staff.filter((s) => staffIdsWithService.includes(s.id))
-  }, [selectedServiceId, staff, assignments])
+  // All active staff are eligible for any service (decoupled staff-services model)
+  const eligibleStaff = staff
 
   function resetForm() {
     setCustomerName('')
@@ -258,10 +246,10 @@ export function ManualBookingModal({
                 </div>
               </div>
 
-              {/* Service & Staff Info */}
+              {/* Service & Time */}
               <div className="space-y-3 rounded-2xl bg-surface p-4 border border-border">
                 <h4 className="font-semibold text-[#172033]">
-                  {rtl ? 'الخدمة والموظف' : 'Service & Staff'}
+                  {rtl ? 'الخدمة والموعد' : 'Service & Time'}
                 </h4>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1 sm:col-span-2">
@@ -281,27 +269,7 @@ export function ManualBookingModal({
                     </select>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="font-medium text-[#374151]">
-                      {rtl ? 'الموظف المسند إليه' : 'Assigned Staff'}
-                    </label>
-                    <select
-                      value={selectedStaffId}
-                      onChange={(e) => setSelectedStaffId(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-paper px-3 py-2 text-xs outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal"
-                    >
-                      <option value="">
-                        {rtl ? 'تلقائي / أي موظف متاح' : 'Auto / Any available'}
-                      </option>
-                      {eligibleStaff.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          {st.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
+                  <div className="space-y-1 sm:col-span-2">
                     <label className="font-medium text-[#374151]">
                       {rtl ? 'موعد الحجز *' : 'Appointment Time *'}
                     </label>

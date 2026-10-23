@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { bookings, bookingItems, customers, dateOverrides, services, serviceTranslations, staff, staffServices, tenants, workingHours } from '@/lib/db/schema'
+import { bookings, bookingItems, customers, dateOverrides, services, serviceTranslations, staff, tenants, workingHours } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 
 const bookingSchema = z.object({
@@ -43,28 +43,19 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
   const service = await db.query.services.findFirst({ where: and(eq(services.id, data.serviceId), eq(services.tenantId, tenant.id), eq(services.isActive, true)) })
   if (!service) return { ok: false as const, message: data.locale === 'ar' ? 'الخدمة غير موجودة.' : 'Service not found.' }
 
-  let availableStaff = await db
+  const availableStaff = await db
     .select({ id: staff.id })
     .from(staff)
-    .innerJoin(staffServices, eq(staffServices.staffId, staff.id))
-    .where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true), eq(staffServices.serviceId, service.id)))
+    .where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true), isNull(staff.deletedAt)))
+    .orderBy(staff.sortOrder)
 
   if (availableStaff.length === 0) {
-    availableStaff = await db
-      .select({ id: staff.id })
-      .from(staff)
-      .where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true)))
-      .orderBy(staff.sortOrder)
-  }
-
-  let defaultStaffMember = availableStaff[0]
-  if (!defaultStaffMember) {
-    const [createdStaff] = await db
-      .insert(staff)
-      .values({ tenantId: tenant.id, sortOrder: 0 })
-      .returning({ id: staff.id })
-    defaultStaffMember = createdStaff
-    availableStaff = [createdStaff]
+    return {
+      ok: false as const,
+      message: data.locale === 'ar'
+        ? 'لا يوجد موظفون متاحون حالياً لهذا الموعد.'
+        : 'No staff members are currently available for this appointment.',
+    }
   }
 
   const start = new Date(data.startsAt)
@@ -99,7 +90,7 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
       const blockStart = new Date(start.getTime() - service.bufferBeforeMin * 60_000)
       const blockEnd = new Date(end.getTime() + service.bufferAfterMin * 60_000)
 
-      let assignedStaff = defaultStaffMember
+      let assignedStaff: { id: string } | null = null
       for (const candidate of availableStaff) {
         const isBusy = await tx
           .select({ id: bookingItems.id })
@@ -120,6 +111,12 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
           assignedStaff = candidate
           break
         }
+      }
+
+      if (!assignedStaff) {
+        const err = new Error('NO_STAFF_AVAILABLE')
+        ;(err as any).code = '23P01'
+        throw err
       }
 
       const booking = await tx.insert(bookings).values({ tenantId: tenant.id, customerId, source: 'online', locale: data.locale, idempotencyKey, startsAt: start, endsAt: end }).returning({ id: bookings.id })

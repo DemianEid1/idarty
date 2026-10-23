@@ -10,7 +10,6 @@ import {
   services,
   serviceTranslations,
   staff,
-  staffServices,
   staffTranslations,
 } from '@/lib/db/schema'
 import type { Locale } from '@/lib/i18n'
@@ -58,7 +57,7 @@ export default async function CalendarPage(props: {
   const days = getWeekDays(startDate)
 
   // Fetch services and staff for dropdown filters and manual booking modal
-  const [serviceRows, staffRows, assignmentRows] = await Promise.all([
+  const [serviceRows, staffRows] = await Promise.all([
     db
       .select({
         id: services.id,
@@ -119,14 +118,6 @@ export default async function CalendarPage(props: {
         )
       )
       .orderBy(staff.sortOrder),
-
-    db
-      .select({
-        staffId: staffServices.staffId,
-        serviceId: staffServices.serviceId,
-      })
-      .from(staffServices)
-      .where(eq(staffServices.tenantId, access.tenant.id)),
   ])
 
   // Validate staff filter against tenant staff members
@@ -391,7 +382,6 @@ export default async function CalendarPage(props: {
           currentStatusFilter={statusParam}
           staffList={localizedStaff}
           servicesList={localizedServices}
-          assignmentsList={assignmentRows}
           canViewInternalNotes={true}
         />
       </div>

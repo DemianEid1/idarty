@@ -22,7 +22,6 @@ const editor = read('../components/website-editor.tsx')
 // The editor's panels are now collapsible sections, so the panel card padding
 // lives in the shared accordion component.
 const accordion = read('../components/accordion-section.tsx')
-const staffServices = read('../components/staff-services-form.tsx')
 
 describe('no horizontal overflow: flex rows wrap and shrink', () => {
   it('the dashboard header stacks on mobile and only becomes a row at sm', () => {
@@ -65,12 +64,6 @@ describe('long unbroken text is contained', () => {
     expect(dashboard).toContain('text-xs text-ink-muted wrap-anywhere')
     // Nothing is hidden with truncate on the data rows.
     expect(dashboard).not.toMatch(/wrap-anywhere[^"]*truncate/)
-  })
-
-  it('the staff-services chips wrap their long labels', () => {
-    expect(staffServices).toContain('min-w-0 max-w-full items-center')
-    expect(staffServices).toContain('<span className="min-w-0 wrap-anywhere">')
-    expect(staffServices).toContain('className="shrink-0"')
   })
 
   it('the editor section-management rows wrap and contain their labels', () => {
@@ -127,10 +120,9 @@ describe('mobile card padding is consistent and fluid', () => {
 })
 
 describe('no element is hidden to make the layout fit', () => {
-  it('the team edit/archive/services controls all remain rendered', () => {
+  it('the team edit/archive controls all remain rendered', () => {
     expect(dashboard).toContain('<StaffEditForm')
     expect(dashboard).toContain('<StaffArchiveButton')
-    expect(dashboard).toContain('<StaffServicesForm')
   })
 
   it('does not use display:none style utilities on data rows', () => {

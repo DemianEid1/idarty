@@ -5,9 +5,10 @@ import { requireSession } from '@/lib/auth'
 import { user } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 
-const roleRank = { receptionist: 1, staff: 2, manager: 3, admin: 4, owner: 5 } as const
+export const roleRank = { receptionist: 1, staff: 2, manager: 3, admin: 4, owner: 5 } as const
+export type MemberRole = keyof typeof roleRank
 
-export async function requireTenantAccess(headers: Headers, slug: string, minimumRole: keyof typeof roleRank = 'receptionist') {
+export async function requireTenantAccess(headers: Headers, slug: string, minimumRole: MemberRole = 'receptionist') {
   const session = await requireSession(headers)
   const rows = await db
     .select({ tenant: tenants, membership: memberships })

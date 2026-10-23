@@ -6,7 +6,7 @@ import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { memberships, serviceTranslations, services, staff, staffServices, staffTranslations, tenantTranslations, tenants, workingHours } from '@/lib/db/schema'
+import { memberships, serviceTranslations, services, staff, staffTranslations, tenantTranslations, tenants, workingHours } from '@/lib/db/schema'
 import { businessTypes, defaultServiceName, defaultServicePreset, businessTypeLabel } from '@/lib/business-types'
 import { logAudit } from '@/lib/audit'
 
@@ -75,8 +75,8 @@ export async function createTenant(_previous: OnboardingResult, formData: FormDa
       const [defaultService] = await tx.insert(services).values({ tenantId: createdTenant.id, durationMin: preset.durationMin, priceAmount: preset.priceAmount, sortOrder: 0, isSample: true }).returning({ id: services.id })
       await tx.insert(serviceTranslations).values(['ar', 'en'].map((locale) => ({ tenantId: createdTenant.id, serviceId: defaultService.id, locale: locale as 'ar' | 'en', name: defaultServiceName(input.businessType, locale as 'ar' | 'en') })))
       const [defaultStaff] = await tx.insert(staff).values({ tenantId: createdTenant.id, membershipId: ownerMembership.id, email: session.user.email, sortOrder: 0, isSample: true }).returning({ id: staff.id })
-      await tx.insert(staffTranslations).values(['ar', 'en'].map((locale) => ({ tenantId: createdTenant.id, staffId: defaultStaff.id, locale: locale as 'ar' | 'en', name: locale === 'ar' ? 'الفريق الرئيسي' : 'Main team' })))
-      await tx.insert(staffServices).values({ tenantId: createdTenant.id, staffId: defaultStaff.id, serviceId: defaultService.id })
+      const ownerStaffName = session.user.name?.trim() || (input.locale === 'ar' ? 'المالك' : 'Owner')
+      await tx.insert(staffTranslations).values(['ar', 'en'].map((locale) => ({ tenantId: createdTenant.id, staffId: defaultStaff.id, locale: locale as 'ar' | 'en', name: ownerStaffName })))
       await tx.insert(workingHours).values([0, 1, 2, 3, 4, 5].map((weekday) => ({ tenantId: createdTenant.id, staffId: defaultStaff.id, weekday, startTime: '09:00', endTime: '17:00', isSample: true })))
       return createdTenant
     })

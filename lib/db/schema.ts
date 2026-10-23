@@ -184,6 +184,7 @@ export const staff = pgTable('staff', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   membershipId: uuid('membership_id'),
+  role: memberRole('role').notNull().default('staff'),
   email: text('email'),
   phoneE164: text('phone_e164'),
   color: text('color'),
@@ -208,15 +209,19 @@ export const staffTranslations = pgTable(
   (t) => [primaryKey({ columns: [t.staffId, t.locale] })],
 )
 
-export const staffServices = pgTable(
-  'staff_services',
-  {
-    tenantId: uuid('tenant_id').notNull(),
-    staffId: uuid('staff_id').notNull(),
-    serviceId: uuid('service_id').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.staffId, t.serviceId] })],
-)
+export const tenantInvitations = pgTable('tenant_invitations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  staffId: uuid('staff_id').notNull().references(() => staff.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  role: memberRole('role').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  invitedByUserId: text('invited_by_user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  expiresAt: tsz('expires_at').notNull(),
+  acceptedAt: tsz('accepted_at'),
+  createdAt: tsz('created_at').notNull().defaultNow(),
+  updatedAt: tsz('updated_at').notNull().defaultNow(),
+})
 
 // --- Availability ----------------------------------------------------------
 export const workingHours = pgTable('working_hours', {

@@ -71,10 +71,6 @@ export interface CalendarViewProps {
     durationMin: number
     priceAmount: string
   }>
-  assignmentsList: Array<{
-    staffId: string
-    serviceId: string
-  }>
   canViewInternalNotes?: boolean
   hideNewBookingButton?: boolean
 }
@@ -91,7 +87,6 @@ export function CalendarView({
   currentStatusFilter,
   staffList,
   servicesList,
-  assignmentsList,
   canViewInternalNotes = true,
   hideNewBookingButton = false,
 }: CalendarViewProps) {
@@ -259,7 +254,6 @@ export function CalendarView({
               currency={currency}
               services={servicesList}
               staff={staffList}
-              assignments={assignmentsList}
             />
           )}
         </div>

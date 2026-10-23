@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { render } from '@react-email/render'
-import { BookingCancellationEmail, BookingConfirmationEmail, BookingReminderEmail, emailSubjects, ResetPasswordEmail, VerifyEmailEmail, type EmailLocale, type EmailTemplate } from './templates'
+import { BookingCancellationEmail, BookingConfirmationEmail, BookingReminderEmail, EmployeeInvitationEmail, emailSubjects, ResetPasswordEmail, VerifyEmailEmail, type EmailLocale, type EmailTemplate } from './templates'
 
 async function getTransporter() {
   const user = process.env.GMAIL_SMTP_USER
@@ -28,6 +28,8 @@ export async function sendTransactionalEmail(input: {
   url: string
   idempotencyKey: string
   startsAt?: string
+  workspaceName?: string
+  roleName?: string
 }) {
   const locale = input.locale || 'ar'
   const element = input.template === 'verify'
@@ -38,7 +40,9 @@ export async function sendTransactionalEmail(input: {
         ? <BookingCancellationEmail locale={locale} url={input.url} startsAt={input.startsAt ?? new Date().toISOString()} />
         : input.template === 'reminder'
           ? <BookingReminderEmail locale={locale} url={input.url} startsAt={input.startsAt ?? new Date().toISOString()} />
-          : <ResetPasswordEmail locale={locale} url={input.url} />
+          : input.template === 'invite'
+            ? <EmployeeInvitationEmail locale={locale} url={input.url} workspaceName={input.workspaceName} roleName={input.roleName} />
+            : <ResetPasswordEmail locale={locale} url={input.url} />
   const rawHtml = await render(element)
   // Sanitize React Email HTML output — strip patterns known to trigger Gmail's
   // inbound spam filter before the message reaches the recipient's inbox.
@@ -56,6 +60,27 @@ export async function sendTransactionalEmail(input: {
   const text = await render(element, { plainText: true })
   const transporter = await getTransporter()
   if (!transporter) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[idarty:dev-email] No SMTP configured in non-production. Logged email delivery:', {
+        to: input.to,
+        template: input.template,
+        subject: emailSubjects[locale][input.template],
+        url: input.url,
+      })
+      try {
+        const { db } = await import('@/lib/db')
+        const { devEmailOutbox } = await import('@/lib/db/schema')
+        await db.insert(devEmailOutbox).values({
+          toAddress: input.to,
+          subject: emailSubjects[locale][input.template],
+          locale: locale as 'ar' | 'en',
+          html,
+        })
+      } catch {
+        // Ignore db outbox write errors in mock/offline test environments
+      }
+      return { messageId: `dev-${Date.now()}`, accepted: [input.to] }
+    }
     console.error('[idarty] GMAIL_SMTP_USER or GMAIL_SMTP_APP_PASSWORD is not configured')
     throw new Error('EMAIL_NOT_CONFIGURED')
   }
