@@ -36,7 +36,6 @@ import {
   formatDateParam,
   getWeekDays,
   getWeekRange,
-  isValidStaffId,
   parseStartDate,
 } from '@/lib/calendar-helpers'
 
@@ -49,7 +48,6 @@ export default async function TenantDashboard(props: {
     status?: string
     view?: string
     start?: string
-    staff?: string
   }>
 }) {
   const { locale, slug } = await props.params
@@ -176,6 +174,8 @@ export default async function TenantDashboard(props: {
     customerName: string
     customerPhone: string
     customerEmail: string | null
+    createdByUserId?: string | null
+    createdByName?: string | null
   }> = []
   let totalBookingsCount = 0
   const itemsByBooking = new Map<
@@ -183,7 +183,6 @@ export default async function TenantDashboard(props: {
     Array<{
       id: string
       serviceName: string
-      staffName: string
       durationMin: number
       priceAmount: string
       startsAt: Date
@@ -196,7 +195,6 @@ export default async function TenantDashboard(props: {
     days: Date[]
     bookingsByDayRecord: Record<string, CalendarBooking[]>
     totalBookingsCount: number
-    validStaffId: string
     statusParam: string
   } | null = null
 
@@ -206,10 +204,6 @@ export default async function TenantDashboard(props: {
       const calStartDateParam = formatDateParam(calStartDate)
       const calWeekRange = getWeekRange(calStartDate)
       const calDays = getWeekDays(calStartDate)
-
-      const rawStaffId = isValidStaffId(searchParams.staff)
-      const validStaffId =
-        rawStaffId && staffRows.some((s) => s.id === rawStaffId) ? rawStaffId : ''
 
       const calStatusParam = searchParams.status || 'active'
       const calBookingConditions = [
@@ -227,25 +221,11 @@ export default async function TenantDashboard(props: {
         calBookingConditions.push(not(eq(bookings.status, 'cancelled')))
       }
 
-      if (validStaffId) {
-        const staffBookingIds = await db
-          .selectDistinct({ bookingId: bookingItems.bookingId })
-          .from(bookingItems)
-          .where(
-            and(
-              eq(bookingItems.tenantId, access.tenant.id),
-              eq(bookingItems.staffId, validStaffId)
-            )
-          )
-        const ids = staffBookingIds.map((r) => r.bookingId)
-        if (ids.length === 0) {
-          calBookingConditions.push(
-            inArray(bookings.id, ['00000000-0000-0000-0000-000000000000'])
-          )
-        } else {
-          calBookingConditions.push(inArray(bookings.id, ids))
-        }
-      }
+      const calCreatorUser = aliasedTable(user, 'dash_cal_creator_user')
+      const calCreatorMembership = aliasedTable(memberships, 'dash_cal_creator_membership')
+      const calCreatorStaff = aliasedTable(staff, 'dash_cal_creator_staff')
+      const calCreatorStaffTranslations = aliasedTable(staffTranslations, 'dash_cal_creator_staff_trans')
+      const calFallbackCreatorStaffTranslations = aliasedTable(staffTranslations, 'dash_cal_fb_creator_staff_trans')
 
       const calBookingRows = await db
         .select({
@@ -258,12 +238,46 @@ export default async function TenantDashboard(props: {
           internalNote: bookings.internalNote,
           cancelReason: bookings.cancelReason,
           createdAt: bookings.createdAt,
+          createdByUserId: bookings.createdByUserId,
+          creatorStaffName: calCreatorStaffTranslations.name,
+          fallbackCreatorStaffName: calFallbackCreatorStaffTranslations.name,
+          creatorUserName: calCreatorUser.name,
+          creatorUserEmail: calCreatorUser.email,
           customerName: customers.fullName,
           customerPhone: customers.phoneE164,
           customerEmail: customers.email,
         })
         .from(bookings)
         .innerJoin(customers, eq(customers.id, bookings.customerId))
+        .leftJoin(calCreatorUser, eq(calCreatorUser.id, bookings.createdByUserId))
+        .leftJoin(
+          calCreatorMembership,
+          and(
+            eq(calCreatorMembership.userId, calCreatorUser.id),
+            eq(calCreatorMembership.tenantId, access.tenant.id)
+          )
+        )
+        .leftJoin(
+          calCreatorStaff,
+          and(
+            eq(calCreatorStaff.membershipId, calCreatorMembership.id),
+            eq(calCreatorStaff.tenantId, access.tenant.id)
+          )
+        )
+        .leftJoin(
+          calCreatorStaffTranslations,
+          and(
+            eq(calCreatorStaffTranslations.staffId, calCreatorStaff.id),
+            eq(calCreatorStaffTranslations.locale, locale)
+          )
+        )
+        .leftJoin(
+          calFallbackCreatorStaffTranslations,
+          and(
+            eq(calFallbackCreatorStaffTranslations.staffId, calCreatorStaff.id),
+            eq(calFallbackCreatorStaffTranslations.locale, fallbackLocale)
+          )
+        )
         .where(and(...calBookingConditions))
         .orderBy(bookings.startsAt)
 
@@ -280,8 +294,6 @@ export default async function TenantDashboard(props: {
             serviceName: serviceTranslations.name,
             fallbackServiceName: fallbackServiceTranslations.name,
             durationMin: services.durationMin,
-            staffName: staffTranslations.name,
-            fallbackStaffName: fallbackStaffTranslations.name,
           })
           .from(bookingItems)
           .leftJoin(services, eq(services.id, bookingItems.serviceId))
@@ -297,21 +309,6 @@ export default async function TenantDashboard(props: {
             and(
               eq(fallbackServiceTranslations.serviceId, services.id),
               eq(fallbackServiceTranslations.locale, fallbackLocale)
-            )
-          )
-          .leftJoin(staff, eq(staff.id, bookingItems.staffId))
-          .leftJoin(
-            staffTranslations,
-            and(
-              eq(staffTranslations.staffId, staff.id),
-              eq(staffTranslations.locale, locale)
-            )
-          )
-          .leftJoin(
-            fallbackStaffTranslations,
-            and(
-              eq(fallbackStaffTranslations.staffId, staff.id),
-              eq(fallbackStaffTranslations.locale, fallbackLocale)
             )
           )
           .where(
@@ -330,10 +327,6 @@ export default async function TenantDashboard(props: {
               item.serviceName ||
               item.fallbackServiceName ||
               (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
-            staffName:
-              item.staffName ||
-              item.fallbackStaffName ||
-              (rtl ? 'عضو فريق' : 'Staff member'),
             durationMin: item.durationMin ?? 0,
             priceAmount: String(item.priceAmount ?? '0'),
             startsAt: item.startsAt,
@@ -349,6 +342,13 @@ export default async function TenantDashboard(props: {
           (sum, it) => sum + (parseFloat(it.priceAmount) || 0),
           0
         )
+        const createdByName =
+          b.creatorStaffName ||
+          b.fallbackCreatorStaffName ||
+          (b.creatorUserName && !b.creatorUserName.includes('@') ? b.creatorUserName : null) ||
+          b.creatorUserEmail ||
+          null
+
         return {
           id: b.id,
           startsAt: b.startsAt,
@@ -364,6 +364,8 @@ export default async function TenantDashboard(props: {
           createdAt: b.createdAt,
           items,
           totalPrice,
+          createdByUserId: b.createdByUserId,
+          createdByName,
         }
       })
 
@@ -379,7 +381,6 @@ export default async function TenantDashboard(props: {
         days: calDays,
         bookingsByDayRecord: calBookingsByDayRecord,
         totalBookingsCount: calAggregatedBookings.length,
-        validStaffId,
         statusParam: calStatusParam,
       }
     } else {
@@ -390,6 +391,12 @@ export default async function TenantDashboard(props: {
       if (statusFilter && statusFilter !== 'all') {
         bookingConditions.push(eq(bookings.status, statusFilter as any))
       }
+
+      const creatorUser = aliasedTable(user, 'dash_b_creator_user')
+      const creatorMembership = aliasedTable(memberships, 'dash_b_creator_membership')
+      const creatorStaff = aliasedTable(staff, 'dash_b_creator_staff')
+      const creatorStaffTranslations = aliasedTable(staffTranslations, 'dash_b_creator_staff_trans')
+      const fallbackCreatorStaffTranslations = aliasedTable(staffTranslations, 'dash_b_fb_creator_staff_trans')
 
       const [countResult, bRows] = await Promise.all([
         db.select({ value: count() }).from(bookings).where(and(...bookingConditions)),
@@ -404,12 +411,46 @@ export default async function TenantDashboard(props: {
             internalNote: bookings.internalNote,
             cancelReason: bookings.cancelReason,
             createdAt: bookings.createdAt,
+            createdByUserId: bookings.createdByUserId,
+            creatorStaffName: creatorStaffTranslations.name,
+            fallbackCreatorStaffName: fallbackCreatorStaffTranslations.name,
+            creatorUserName: creatorUser.name,
+            creatorUserEmail: creatorUser.email,
             customerName: customers.fullName,
             customerPhone: customers.phoneE164,
             customerEmail: customers.email,
           })
           .from(bookings)
           .innerJoin(customers, eq(customers.id, bookings.customerId))
+          .leftJoin(creatorUser, eq(creatorUser.id, bookings.createdByUserId))
+          .leftJoin(
+            creatorMembership,
+            and(
+              eq(creatorMembership.userId, creatorUser.id),
+              eq(creatorMembership.tenantId, access.tenant.id)
+            )
+          )
+          .leftJoin(
+            creatorStaff,
+            and(
+              eq(creatorStaff.membershipId, creatorMembership.id),
+              eq(creatorStaff.tenantId, access.tenant.id)
+            )
+          )
+          .leftJoin(
+            creatorStaffTranslations,
+            and(
+              eq(creatorStaffTranslations.staffId, creatorStaff.id),
+              eq(creatorStaffTranslations.locale, locale)
+            )
+          )
+          .leftJoin(
+            fallbackCreatorStaffTranslations,
+            and(
+              eq(fallbackCreatorStaffTranslations.staffId, creatorStaff.id),
+              eq(fallbackCreatorStaffTranslations.locale, fallbackLocale)
+            )
+          )
           .where(and(...bookingConditions))
           .orderBy(desc(bookings.startsAt))
           .limit(pageSize)
@@ -417,7 +458,15 @@ export default async function TenantDashboard(props: {
       ])
 
       totalBookingsCount = countResult[0]?.value ?? 0
-      bookingListRows = bRows
+      bookingListRows = bRows.map((r) => ({
+        ...r,
+        createdByName:
+          r.creatorStaffName ||
+          r.fallbackCreatorStaffName ||
+          (r.creatorUserName && !r.creatorUserName.includes('@') ? r.creatorUserName : null) ||
+          r.creatorUserEmail ||
+          null,
+      }))
 
       if (bRows.length > 0) {
         const bIds = bRows.map((b) => b.id)
@@ -431,16 +480,11 @@ export default async function TenantDashboard(props: {
             serviceName: serviceTranslations.name,
             fallbackServiceName: fallbackServiceTranslations.name,
             durationMin: services.durationMin,
-            staffName: staffTranslations.name,
-            fallbackStaffName: fallbackStaffTranslations.name,
           })
           .from(bookingItems)
           .leftJoin(services, eq(services.id, bookingItems.serviceId))
           .leftJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale)))
           .leftJoin(fallbackServiceTranslations, and(eq(fallbackServiceTranslations.serviceId, services.id), eq(fallbackServiceTranslations.locale, fallbackLocale)))
-          .leftJoin(staff, eq(staff.id, bookingItems.staffId))
-          .leftJoin(staffTranslations, and(eq(staffTranslations.staffId, staff.id), eq(staffTranslations.locale, locale)))
-          .leftJoin(fallbackStaffTranslations, and(eq(fallbackStaffTranslations.staffId, staff.id), eq(fallbackStaffTranslations.locale, fallbackLocale)))
           .where(and(eq(bookingItems.tenantId, access.tenant.id), inArray(bookingItems.bookingId, bIds)))
           .orderBy(bookingItems.sortOrder, bookingItems.startsAt)
 
@@ -449,7 +493,6 @@ export default async function TenantDashboard(props: {
           list.push({
             id: item.id,
             serviceName: item.serviceName || item.fallbackServiceName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
-            staffName: item.staffName || item.fallbackStaffName || (rtl ? 'عضو فريق' : 'Staff member'),
             durationMin: item.durationMin ?? 0,
             priceAmount: String(item.priceAmount ?? '0'),
             startsAt: item.startsAt,
@@ -639,10 +682,6 @@ export default async function TenantDashboard(props: {
                       durationMin: s.durationMin,
                       priceAmount: String(s.priceAmount),
                     }))}
-                    staff={staffRows.map((st) => ({
-                      id: st.id,
-                      name: st.name || st.fallbackName || (rtl ? 'عضو فريق' : 'Team member'),
-                    }))}
                   />
                 </div>
               </div>
@@ -657,12 +696,7 @@ export default async function TenantDashboard(props: {
                     days={calData.days.map((d) => ({ date: d, dateParam: formatDateParam(d) }))}
                     bookingsByDay={calData.bookingsByDayRecord}
                     totalBookingsCount={calData.totalBookingsCount}
-                    currentStaffFilter={calData.validStaffId}
                     currentStatusFilter={calData.statusParam}
-                    staffList={staffRows.map((st) => ({
-                      id: st.id,
-                      name: st.name || st.fallbackName || (rtl ? 'عضو فريق' : 'Staff member'),
-                    }))}
                     servicesList={serviceRows.map((s) => ({
                       id: s.id,
                       name: s.name || s.fallbackName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
@@ -811,9 +845,6 @@ export default async function TenantDashboard(props: {
                                     <div className="min-w-0 flex-1">
                                       <p className="font-medium text-[#172033]">{item.serviceName}</p>
                                       <p className="mt-0.5 text-[11px] text-ink-muted">
-                                        {rtl ? 'الموظف المسؤول: ' : 'Staff: '}
-                                        <span className="text-[#374151] font-medium">{item.staffName}</span>
-                                        {' · '}
                                         {item.durationMin} {rtl ? 'دقيقة' : 'min'}
                                         {' · '}
                                         {new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
@@ -877,6 +908,12 @@ export default async function TenantDashboard(props: {
                                   <p className="text-red-600 mt-0.5">
                                     {rtl ? 'سبب الإلغاء: ' : 'Cancel reason: '}
                                     <span className="font-medium">{b.cancelReason}</span>
+                                  </p>
+                                )}
+                                {b.source === 'dashboard' && b.createdByName && (
+                                  <p className="text-ink-muted mt-0.5">
+                                    {rtl ? 'الموظف المسؤول: ' : 'Responsible staff: '}
+                                    <span className="text-[#172033] font-medium">{b.createdByName}</span>
                                   </p>
                                 )}
                                 <p className="text-ink-muted mt-1 text-[11px]">
@@ -1012,7 +1049,13 @@ export default async function TenantDashboard(props: {
             <div className="rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
               <h2 className="text-lg font-semibold">{locale === 'ar' ? 'المعلومات الأساسية' : 'Basic information'}</h2>
               <p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'قم بتحديث اسم مساحة عملك ونوع نشاطك.' : 'Update your workspace name and business type.'}</p>
-              <WorkspaceSettingsForm locale={locale} slug={slug} currentName={tenantTranslation?.name ?? access.tenant.slug} currentType={isBusinessType(access.tenant.businessType) ? access.tenant.businessType : 'other'} />
+              <WorkspaceSettingsForm
+                locale={locale}
+                slug={slug}
+                currentName={tenantTranslation?.name ?? access.tenant.slug}
+                currentType={isBusinessType(access.tenant.businessType) ? access.tenant.businessType : 'other'}
+                currentCapacity={access.tenant.bookingCapacity ?? 1}
+              />
             </div>
           </div>
         )}

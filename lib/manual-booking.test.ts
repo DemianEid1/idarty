@@ -13,16 +13,41 @@ describe('manual booking action security and validation contract', () => {
     expect(actionsCode).toContain("requireTenantAccess(await headers(), data.slug, 'receptionist')")
   })
 
-  it('scopes service and staff lookup strictly to access.tenant.id', () => {
+  it('scopes the service lookup strictly to access.tenant.id', () => {
     expect(actionsCode).toContain('eq(services.tenantId, access.tenant.id)')
-    expect(actionsCode).toContain('eq(staff.tenantId, access.tenant.id)')
   })
 
-  it('checks for staff schedule overlap conflicts before inserting', () => {
-    expect(actionsCode).toContain('eq(bookingItems.staffId, assignedStaffId)')
-    expect(actionsCode).toContain("not(eq(bookings.status, 'cancelled'))")
-    expect(actionsCode).toContain('lt(bookingItems.blockStartsAt, blockEnd)')
-    expect(actionsCode).toContain('gt(bookingItems.blockEndsAt, blockStart)')
+  it('carries no staff assignment in its input contract', () => {
+    // Bookings are tenant-scoped, not staff-scoped. The INPUT contract carries
+    // no staff dependency: the modal never sends a staffId, the zod schema never
+    // parses one, and the handler never reads one from the payload.
+    // (The booking_items WRITE does state `staffId: null` explicitly — that is
+    // asserted separately below.)
+    expect(actionsCode).not.toContain('assignedStaffId')
+    expect(actionsCode).not.toContain('STAFF_BUSY')
+    expect(actionsCode).not.toContain('eq(staff.tenantId, access.tenant.id)')
+    // The zod input schema accepts no staff id.
+    const schemaStart = actionsCode.indexOf('const manualBookingSchema = z.object(')
+    const schemaEnd = actionsCode.indexOf('})', schemaStart)
+    expect(schemaStart).toBeGreaterThan(-1)
+    expect(actionsCode.slice(schemaStart, schemaEnd)).not.toContain('staffId')
+    // ...and the request payload is never read for one.
+    expect(actionsCode).not.toMatch(/data\.staffId/)
+  })
+
+  it('explicitly writes staffId: null, matching the public booking path', () => {
+    // Unassigned staff is stated EXPLICITLY rather than omitted, so both write
+    // paths represent "no staff assigned" the same way and the contract is
+    // assertable. Under migration 0012 the column is nullable.
+    const itemWrite = actionsCode.slice(actionsCode.indexOf('tx.insert(bookingItems)'))
+    expect(itemWrite).toContain('staffId: null')
+    // The ONLY staffId occurrence in the whole file is that explicit null.
+    expect(actionsCode.match(/staffId/g) ?? []).toHaveLength(1)
+  })
+
+  it('enforces tenant-level capacity instead of a staff overlap check', () => {
+    expect(actionsCode).toContain('assertTenantBookingCapacity(')
+    expect(actionsCode).not.toContain('eq(bookingItems.staffId,')
   })
 
   it('normalizes Egyptian local phone numbers to E164 (+2)', () => {
@@ -38,6 +63,16 @@ describe('manual booking action security and validation contract', () => {
     expect(actionsCode).toContain("action: 'booking.created_manually'")
     expect(actionsCode).toContain('entityType: \'booking\'')
     expect(actionsCode).toContain('tenantId: access.tenant.id')
+  })
+
+  it('enforces tenant booking capacity inside database transaction', () => {
+    expect(actionsCode).toContain('assertTenantBookingCapacity(')
+    expect(actionsCode).toContain('TENANT_CAPACITY_EXCEEDED')
+  })
+
+  it('does not auto-provision dummy staff or run active staff availability loop', () => {
+    expect(actionsCode).not.toContain('for (const candidate of activeStaff)')
+    expect(actionsCode).not.toContain('const [newStaff] = await db')
   })
 })
 

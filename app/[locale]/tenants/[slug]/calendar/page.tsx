@@ -7,10 +7,12 @@ import {
   bookingItems,
   bookings,
   customers,
+  memberships,
   services,
   serviceTranslations,
   staff,
   staffTranslations,
+  user,
 } from '@/lib/db/schema'
 import type { Locale } from '@/lib/i18n'
 import { ALL_BOOKING_STATUSES } from '@/lib/booking-status'
@@ -19,7 +21,6 @@ import {
   formatDateParam,
   getWeekDays,
   getWeekRange,
-  isValidStaffId,
   parseStartDate,
 } from '@/lib/calendar-helpers'
 import { CalendarView, type CalendarBooking, type CalendarBookingItem } from '@/components/calendar-view'
@@ -27,7 +28,7 @@ import { CalendarDays, ClipboardList } from 'lucide-react'
 
 export default async function CalendarPage(props: {
   params: Promise<{ locale: Locale; slug: string }>
-  searchParams: Promise<{ start?: string; staff?: string; status?: string }>
+  searchParams: Promise<{ start?: string; status?: string }>
 }) {
   const { locale, slug } = await props.params
   const searchParams = await props.searchParams
@@ -45,10 +46,6 @@ export default async function CalendarPage(props: {
     serviceTranslations,
     'fallback_cal_service_translations'
   )
-  const fallbackStaffTranslations = aliasedTable(
-    staffTranslations,
-    'fallback_cal_staff_translations'
-  )
 
   // Parse and validate start date parameter
   const startDate = parseStartDate(searchParams.start)
@@ -56,8 +53,8 @@ export default async function CalendarPage(props: {
   const weekRange = getWeekRange(startDate)
   const days = getWeekDays(startDate)
 
-  // Fetch services and staff for dropdown filters and manual booking modal
-  const [serviceRows, staffRows] = await Promise.all([
+  // Fetch services for the manual booking modal.
+  const [serviceRows] = await Promise.all([
     db
       .select({
         id: services.id,
@@ -88,42 +85,7 @@ export default async function CalendarPage(props: {
         )
       )
       .orderBy(services.sortOrder),
-
-    db
-      .select({
-        id: staff.id,
-        name: staffTranslations.name,
-        fallbackName: fallbackStaffTranslations.name,
-      })
-      .from(staff)
-      .leftJoin(
-        staffTranslations,
-        and(
-          eq(staffTranslations.staffId, staff.id),
-          eq(staffTranslations.locale, locale)
-        )
-      )
-      .leftJoin(
-        fallbackStaffTranslations,
-        and(
-          eq(fallbackStaffTranslations.staffId, staff.id),
-          eq(fallbackStaffTranslations.locale, fallbackLocale)
-        )
-      )
-      .where(
-        and(
-          eq(staff.tenantId, access.tenant.id),
-          eq(staff.isActive, true),
-          isNull(staff.deletedAt)
-        )
-      )
-      .orderBy(staff.sortOrder),
   ])
-
-  // Validate staff filter against tenant staff members
-  const rawStaffId = isValidStaffId(searchParams.staff)
-  const validStaffId =
-    rawStaffId && staffRows.some((s) => s.id === rawStaffId) ? rawStaffId : ''
 
   // Build query conditions for bookings
   const bookingConditions = [
@@ -144,26 +106,11 @@ export default async function CalendarPage(props: {
     bookingConditions.push(not(eq(bookings.status, 'cancelled')))
   }
 
-  // Staff filtering via bookingItems
-  if (validStaffId) {
-    const staffBookingIds = await db
-      .selectDistinct({ bookingId: bookingItems.bookingId })
-      .from(bookingItems)
-      .where(
-        and(
-          eq(bookingItems.tenantId, access.tenant.id),
-          eq(bookingItems.staffId, validStaffId)
-        )
-      )
-    const ids = staffBookingIds.map((r) => r.bookingId)
-    if (ids.length === 0) {
-      bookingConditions.push(
-        inArray(bookings.id, ['00000000-0000-0000-0000-000000000000'])
-      )
-    } else {
-      bookingConditions.push(inArray(bookings.id, ids))
-    }
-  }
+  const calCreatorUser = aliasedTable(user, 'cal_page_creator_user')
+  const calCreatorMembership = aliasedTable(memberships, 'cal_page_creator_membership')
+  const calCreatorStaff = aliasedTable(staff, 'cal_page_creator_staff')
+  const calCreatorStaffTranslations = aliasedTable(staffTranslations, 'cal_page_creator_staff_trans')
+  const calFallbackCreatorStaffTranslations = aliasedTable(staffTranslations, 'cal_page_fb_creator_staff_trans')
 
   // Fetch bookings in the week range
   const bookingRows = await db
@@ -177,12 +124,46 @@ export default async function CalendarPage(props: {
       internalNote: bookings.internalNote,
       cancelReason: bookings.cancelReason,
       createdAt: bookings.createdAt,
+      createdByUserId: bookings.createdByUserId,
+      creatorStaffName: calCreatorStaffTranslations.name,
+      fallbackCreatorStaffName: calFallbackCreatorStaffTranslations.name,
+      creatorUserName: calCreatorUser.name,
+      creatorUserEmail: calCreatorUser.email,
       customerName: customers.fullName,
       customerPhone: customers.phoneE164,
       customerEmail: customers.email,
     })
     .from(bookings)
     .innerJoin(customers, eq(customers.id, bookings.customerId))
+    .leftJoin(calCreatorUser, eq(calCreatorUser.id, bookings.createdByUserId))
+    .leftJoin(
+      calCreatorMembership,
+      and(
+        eq(calCreatorMembership.userId, calCreatorUser.id),
+        eq(calCreatorMembership.tenantId, access.tenant.id)
+      )
+    )
+    .leftJoin(
+      calCreatorStaff,
+      and(
+        eq(calCreatorStaff.membershipId, calCreatorMembership.id),
+        eq(calCreatorStaff.tenantId, access.tenant.id)
+      )
+    )
+    .leftJoin(
+      calCreatorStaffTranslations,
+      and(
+        eq(calCreatorStaffTranslations.staffId, calCreatorStaff.id),
+        eq(calCreatorStaffTranslations.locale, locale)
+      )
+    )
+    .leftJoin(
+      calFallbackCreatorStaffTranslations,
+      and(
+        eq(calFallbackCreatorStaffTranslations.staffId, calCreatorStaff.id),
+        eq(calFallbackCreatorStaffTranslations.locale, fallbackLocale)
+      )
+    )
     .where(and(...bookingConditions))
     .orderBy(bookings.startsAt)
 
@@ -200,8 +181,6 @@ export default async function CalendarPage(props: {
         serviceName: serviceTranslations.name,
         fallbackServiceName: fallbackServiceTranslations.name,
         durationMin: services.durationMin,
-        staffName: staffTranslations.name,
-        fallbackStaffName: fallbackStaffTranslations.name,
       })
       .from(bookingItems)
       .leftJoin(services, eq(services.id, bookingItems.serviceId))
@@ -217,21 +196,6 @@ export default async function CalendarPage(props: {
         and(
           eq(fallbackServiceTranslations.serviceId, services.id),
           eq(fallbackServiceTranslations.locale, fallbackLocale)
-        )
-      )
-      .leftJoin(staff, eq(staff.id, bookingItems.staffId))
-      .leftJoin(
-        staffTranslations,
-        and(
-          eq(staffTranslations.staffId, staff.id),
-          eq(staffTranslations.locale, locale)
-        )
-      )
-      .leftJoin(
-        fallbackStaffTranslations,
-        and(
-          eq(fallbackStaffTranslations.staffId, staff.id),
-          eq(fallbackStaffTranslations.locale, fallbackLocale)
         )
       )
       .where(
@@ -250,10 +214,6 @@ export default async function CalendarPage(props: {
           it.serviceName ||
           it.fallbackServiceName ||
           (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
-        staffName:
-          it.staffName ||
-          it.fallbackStaffName ||
-          (rtl ? 'عضو فريق' : 'Staff member'),
         durationMin: it.durationMin ?? 0,
         priceAmount: String(it.priceAmount ?? '0'),
         startsAt: it.startsAt,
@@ -270,6 +230,13 @@ export default async function CalendarPage(props: {
       (sum, item) => sum + (parseFloat(item.priceAmount) || 0),
       0
     )
+    const createdByName =
+      b.creatorStaffName ||
+      b.fallbackCreatorStaffName ||
+      (b.creatorUserName && !b.creatorUserName.includes('@') ? b.creatorUserName : null) ||
+      b.creatorUserEmail ||
+      null
+
     return {
       id: b.id,
       startsAt: b.startsAt,
@@ -285,6 +252,8 @@ export default async function CalendarPage(props: {
       createdAt: b.createdAt,
       items,
       totalPrice,
+      createdByUserId: b.createdByUserId,
+      createdByName,
     }
   })
 
@@ -302,12 +271,6 @@ export default async function CalendarPage(props: {
       s.name || s.fallbackName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
     durationMin: s.durationMin,
     priceAmount: s.priceAmount,
-  }))
-
-  const localizedStaff = staffRows.map((st) => ({
-    id: st.id,
-    name:
-      st.name || st.fallbackName || (rtl ? 'عضو فريق' : 'Staff member'),
   }))
 
   return (
@@ -378,9 +341,7 @@ export default async function CalendarPage(props: {
           days={days.map((d) => ({ date: d, dateParam: formatDateParam(d) }))}
           bookingsByDay={bookingsByDayRecord}
           totalBookingsCount={aggregatedBookings.length}
-          currentStaffFilter={validStaffId}
           currentStatusFilter={statusParam}
-          staffList={localizedStaff}
           servicesList={localizedServices}
           canViewInternalNotes={true}
         />

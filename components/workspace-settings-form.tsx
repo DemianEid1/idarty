@@ -6,7 +6,19 @@ import { businessTypes, businessTypeLabels, defaultWorkspacePlaceholder, type Bu
 import { publicTenantUrl } from '@/lib/routes'
 import { useToast } from '@/components/toast'
 
-export function WorkspaceSettingsForm({ locale, slug, currentName, currentType }: { locale: 'ar' | 'en', slug: string, currentName: string, currentType: BusinessType }) {
+export function WorkspaceSettingsForm({
+  locale,
+  slug,
+  currentName,
+  currentType,
+  currentCapacity = 1,
+}: {
+  locale: 'ar' | 'en'
+  slug: string
+  currentName: string
+  currentType: BusinessType
+  currentCapacity?: number
+}) {
   const rtl = locale === 'ar'
   const { toast } = useToast()
   const [isPending, setIsPending] = useState(false)
@@ -33,6 +45,24 @@ export function WorkspaceSettingsForm({ locale, slug, currentName, currentType }
         <select name="businessType" value={businessType} onChange={(e) => setBusinessType(e.target.value as BusinessType)} className="mt-2 h-12 w-full rounded-xl border border-[#e1e5ed] bg-surface px-4 text-sm outline-none transition focus:border-brand-teal focus:bg-paper focus:ring-4 focus:ring-brand-teal/10">
           {businessTypes.map((type) => <option key={type} value={type}>{businessTypeLabels[type][locale]}</option>)}
         </select>
+      </label>
+
+      <label className="block text-sm font-semibold">
+        {rtl ? 'سعة الحجوزات المتزامنة' : 'Simultaneous booking capacity'}
+        <input
+          type="number"
+          name="bookingCapacity"
+          defaultValue={currentCapacity}
+          min={1}
+          max={100}
+          required
+          className="mt-2 h-12 w-full rounded-xl border border-[#e1e5ed] bg-surface px-4 text-sm outline-none transition focus:border-brand-teal focus:bg-paper focus:ring-4 focus:ring-brand-teal/10"
+        />
+        <span className="mt-1 block text-xs text-ink-muted">
+          {rtl
+            ? 'أقصى عدد من الحجوزات النشطة التي يمكن استقبالها في نفس الوقت (بحد أدنى 1).'
+            : 'Maximum number of active bookings that can be hosted at the same time (minimum 1).'}
+        </span>
       </label>
       
       <label className="block text-sm font-semibold opacity-70 cursor-not-allowed">{rtl ? 'الرابط المختصر (غير قابل للتعديل)' : 'Workspace URL (Disabled)'}

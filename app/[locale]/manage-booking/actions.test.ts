@@ -13,8 +13,13 @@ vi.mock('@/lib/audit', () => ({
   },
 }))
 
-vi.mock('@/lib/db', () => ({
-  db: {
+vi.mock('@/lib/booking-capacity', () => ({
+  acquireTenantBookingLock: vi.fn(async () => {}),
+}))
+
+vi.mock('@/lib/db', () => {
+  const mockDb = {
+    transaction: vi.fn(async (cb: any) => cb(mockDb)),
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         innerJoin: vi.fn(() => ({
@@ -31,8 +36,9 @@ vi.mock('@/lib/db', () => ({
         })),
       })),
     })),
-  },
-}))
+  }
+  return { db: mockDb }
+})
 
 vi.mock('@/lib/email/send', () => ({
   sendTransactionalEmail: vi.fn().mockResolvedValue({}),

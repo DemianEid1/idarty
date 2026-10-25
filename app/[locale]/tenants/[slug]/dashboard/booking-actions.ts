@@ -2,12 +2,13 @@
 
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
-import { and, eq, gt, isNull, lt, not } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { bookingItems, bookings, customers, services, staff } from '@/lib/db/schema'
+import { bookingItems, bookings, customers, services } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { logAudit } from '@/lib/audit'
+import { acquireTenantBookingLock, assertTenantBookingCapacity } from '@/lib/booking-capacity'
 
 const inputSchema = z.object({ slug: z.string().min(2), bookingId: z.string().uuid() })
 
@@ -15,7 +16,16 @@ export async function cancelBooking(input: z.infer<typeof inputSchema>) {
   const data = inputSchema.parse(input)
   const access = await requireTenantAccess(await headers(), data.slug, 'manager')
   const booking = await db.select({ id: bookings.id, startsAt: bookings.startsAt, locale: bookings.locale, email: customers.email }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).where(and(eq(bookings.id, data.bookingId), eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'confirmed'))).limit(1)
-  const result = await db.update(bookings).set({ status: 'cancelled', cancelledAt: new Date(), updatedAt: new Date() }).where(and(eq(bookings.id, data.bookingId), eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'confirmed'))).returning({ id: bookings.id })
+  // Status changes release capacity, so they must follow the same protocol as
+  // the capacity consumers (public booking, manual booking, reschedule): take the
+  // tenant advisory lock FIRST, inside the transaction, before touching the row.
+  // Without it a cancellation committing mid-transaction leaves a creation reading
+  // a stale-higher count and rejecting a slot that is actually free. The lock is
+  // taken on the AUTHORIZED tenant id, never a request-supplied value.
+  const result = await db.transaction(async (tx) => {
+    await acquireTenantBookingLock(tx, access.tenant.id)
+    return tx.update(bookings).set({ status: 'cancelled', cancelledAt: new Date(), updatedAt: new Date() }).where(and(eq(bookings.id, data.bookingId), eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'confirmed'))).returning({ id: bookings.id })
+  })
   if (result.length) {
     await logAudit({
       actorUserId: access.session.user.id,
@@ -46,7 +56,13 @@ export async function cancelBooking(input: z.infer<typeof inputSchema>) {
 export async function markNoShow(input: z.infer<typeof inputSchema>) {
   const data = inputSchema.parse(input)
   const access = await requireTenantAccess(await headers(), data.slug, 'manager')
-  const result = await db.update(bookings).set({ status: 'no_show', updatedAt: new Date() }).where(and(eq(bookings.id, data.bookingId), eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'confirmed'))).returning({ id: bookings.id })
+  // Same protocol as cancelBooking: the lock must be acquired before the status
+  // change so this capacity-releasing write cannot interleave with a creation
+  // transaction mid-read. Authorized tenant id only.
+  const result = await db.transaction(async (tx) => {
+    await acquireTenantBookingLock(tx, access.tenant.id)
+    return tx.update(bookings).set({ status: 'no_show', updatedAt: new Date() }).where(and(eq(bookings.id, data.bookingId), eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'confirmed'))).returning({ id: bookings.id })
+  })
   if (result.length) {
     await logAudit({
       actorUserId: access.session.user.id,
@@ -70,7 +86,6 @@ const manualBookingSchema = z.object({
   customerPhone: z.string().trim().min(6).max(30),
   customerEmail: z.string().email().optional().or(z.literal('')),
   serviceId: z.string().uuid(),
-  staffId: z.string().uuid().optional().or(z.literal('')),
   startsAt: z.string().datetime({ offset: true }),
   customerNote: z.string().max(500).optional().or(z.literal('')),
   internalNote: z.string().max(500).optional().or(z.literal('')),
@@ -94,49 +109,6 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
     }
   }
 
-  let assignedStaffId = data.staffId || ''
-  if (assignedStaffId) {
-    const staffMember = await db.query.staff.findFirst({
-      where: and(
-        eq(staff.id, assignedStaffId),
-        eq(staff.tenantId, access.tenant.id),
-        eq(staff.isActive, true),
-        isNull(staff.deletedAt)
-      ),
-    })
-    if (!staffMember) {
-      return {
-        ok: false as const,
-        message: data.locale === 'ar' ? 'عضو الفريق المحدد غير موجود.' : 'Selected staff member not found.',
-      }
-    }
-  } else {
-    const anyStaff = await db
-      .select({ id: staff.id })
-      .from(staff)
-      .where(
-        and(
-          eq(staff.tenantId, access.tenant.id),
-          eq(staff.isActive, true),
-          isNull(staff.deletedAt)
-        )
-      )
-      .orderBy(staff.sortOrder)
-      .limit(1)
-    if (anyStaff.length > 0) {
-      assignedStaffId = anyStaff[0].id
-    }
-  }
-
-  if (!assignedStaffId) {
-    return {
-      ok: false as const,
-      message: data.locale === 'ar'
-        ? 'يرجى إضافة عضو فريق أولاً لتعيين الموعد.'
-        : 'Please add a team member first to assign bookings.',
-    }
-  }
-
   const start = new Date(data.startsAt)
   if (Number.isNaN(start.getTime())) {
     return {
@@ -148,33 +120,20 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
   const blockStart = new Date(start.getTime() - service.bufferBeforeMin * 60_000)
   const blockEnd = new Date(end.getTime() + service.bufferAfterMin * 60_000)
 
-  // Check for conflicts
-  const conflict = await db
-    .select({ id: bookingItems.id })
-    .from(bookingItems)
-    .innerJoin(bookings, eq(bookings.id, bookingItems.bookingId))
-    .where(
-      and(
-        eq(bookingItems.tenantId, access.tenant.id),
-        eq(bookingItems.staffId, assignedStaffId),
-        not(eq(bookings.status, 'cancelled')),
-        lt(bookingItems.blockStartsAt, blockEnd),
-        gt(bookingItems.blockEndsAt, blockStart)
-      )
-    )
-    .limit(1)
-
-  if (conflict.length > 0) {
-    return {
-      ok: false as const,
-      message: data.locale === 'ar'
-        ? 'عضو الفريق لديه موعد آخر متعارض في هذا التوقيت.'
-        : 'The selected team member has an overlapping appointment at this time.',
-    }
-  }
-
   try {
     const result = await db.transaction(async (tx) => {
+      const capacityCheck = await assertTenantBookingCapacity(
+        tx,
+        access.tenant.id,
+        blockStart,
+        blockEnd
+      )
+      if (!capacityCheck.allowed) {
+        const err = new Error('TENANT_CAPACITY_EXCEEDED')
+        ;(err as any).code = '23P01'
+        throw err
+      }
+
       const cleanPhone = data.customerPhone.replace(/[\s-]/g, '')
       const phoneE164 = /^01[0125]\d{8}$/.test(cleanPhone) ? '+2' + cleanPhone : cleanPhone
 
@@ -236,7 +195,11 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
         tenantId: access.tenant.id,
         bookingId: booking.id,
         serviceId: service.id,
-        staffId: assignedStaffId,
+        // Unassigned staff is represented EXPLICITLY as null, matching the
+        // public booking path (book/actions.ts). The column is nullable under
+        // migration 0012; stating null rather than omitting the key keeps both
+        // write paths saying the same thing and makes the contract assertable.
+        staffId: null,
         startsAt: start,
         endsAt: end,
         blockStartsAt: blockStart,
@@ -257,7 +220,6 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
         metadata: {
           source: 'dashboard',
           serviceId: service.id,
-          staffId: assignedStaffId,
           startsAt: start.toISOString(),
         },
       },
@@ -270,12 +232,12 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
     revalidatePath('/[locale]/tenants/[slug]/calendar', 'page')
     return { ok: true as const, bookingId: result.id }
   } catch (error: any) {
-    if (error.code === '23P01') {
+    if (error.code === '23P01' || error.message === 'TENANT_CAPACITY_EXCEEDED') {
       return {
         ok: false as const,
         message: data.locale === 'ar'
-          ? 'هذا التوقيت تم حجزه للتو. يرجى اختيار موعد آخر.'
-          : 'This time slot was just booked. Please choose another time.',
+          ? 'هذا التوقيت تم حجزه للتو أو اكتملت السعة المتاحة. يرجى اختيار موعد آخر.'
+          : 'This time slot was just booked or workspace capacity is full. Please choose another time.',
       }
     }
     console.error('[idarty] manual booking creation error:', error)

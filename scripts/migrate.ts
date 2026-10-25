@@ -3,12 +3,17 @@ import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { config } from 'dotenv'
 import { Client } from 'pg'
-import { getDatabaseTestUrl } from '../lib/database-test-guard'
+import { getMigrationDatabaseUrl } from '../lib/database-test-guard'
 
 config({ path: ['.env.local', '.env.development.local', '.env'], quiet: true })
 
 const testDatabase = process.env.MIGRATION_TEST_MODE === 'true'
-const testConfig = testDatabase ? getDatabaseTestUrl() : null
+// In test mode, resolve the MIGRATION connection: an elevated, migration-only
+// role on the same isolated test branch when MIGRATION_TEST_MIGRATOR_URL is set,
+// otherwise the restricted test URL (unchanged behaviour). Both paths go through
+// the same guard, so production can never be reached. The normal production path
+// (no MIGRATION_TEST_MODE) is untouched.
+const testConfig = testDatabase ? getMigrationDatabaseUrl() : null
 const connectionString = testConfig?.url ?? process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
 if (!connectionString) {
   console.error('DATABASE_URL_UNPOOLED (or DATABASE_URL) is required')

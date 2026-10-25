@@ -62,7 +62,10 @@ export default async function DashboardLayout({
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       redirect(`/${locale}/login?next=/${locale}/tenants/${slug}/dashboard`)
     }
-    notFound()
+    if (error instanceof Error && error.message === 'FORBIDDEN') {
+      notFound()
+    }
+    throw error
   }
 
   const typedLocale = locale as Locale

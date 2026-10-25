@@ -44,7 +44,9 @@ describe('service translation fallback and multi-locale support', () => {
     expect(dashboardPage).toContain('fallbackStaffTranslations')
     expect(dashboardPage).toContain('s.name || s.fallbackName')
     expect(dashboardPage).toContain('serviceName')
-    expect(dashboardPage).toContain('staffName')
+    // fallbackStaffTranslations remains for the team-management section, not for
+    // booking items.
+    expect(dashboardPage).toContain('name: staffTranslations.name')
   })
 
   it('creates services with entries for both ar and en and invalidates both locales', () => {

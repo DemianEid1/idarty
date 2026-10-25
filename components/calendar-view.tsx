@@ -14,7 +14,6 @@ import {
   Phone,
   RotateCcw,
   User,
-  Users,
   X,
 } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
@@ -30,7 +29,6 @@ import {
 export interface CalendarBookingItem {
   id: string
   serviceName: string
-  staffName: string
   durationMin: number
   priceAmount: string
   startsAt: Date
@@ -52,6 +50,8 @@ export interface CalendarBooking {
   createdAt: Date
   items: CalendarBookingItem[]
   totalPrice: number
+  createdByUserId?: string | null
+  createdByName?: string | null
 }
 
 export interface CalendarViewProps {
@@ -62,9 +62,7 @@ export interface CalendarViewProps {
   days: Array<{ date: Date; dateParam: string }>
   bookingsByDay: Record<string, CalendarBooking[]>
   totalBookingsCount: number
-  currentStaffFilter: string
   currentStatusFilter: string
-  staffList: Array<{ id: string; name: string }>
   servicesList: Array<{
     id: string
     name: string
@@ -83,9 +81,7 @@ export function CalendarView({
   days,
   bookingsByDay,
   totalBookingsCount,
-  currentStaffFilter,
   currentStatusFilter,
-  staffList,
   servicesList,
   canViewInternalNotes = true,
   hideNewBookingButton = false,
@@ -117,21 +113,15 @@ export function CalendarView({
 
   function updateQuery(updates: {
     start?: string | null
-    staff?: string | null
     status?: string | null
   }) {
     const params = new URLSearchParams(searchParams ? searchParams.toString() : '')
     const nextStart = updates.start !== undefined ? updates.start : startDate
-    const nextStaff =
-      updates.staff !== undefined ? updates.staff : currentStaffFilter
     const nextStatus =
       updates.status !== undefined ? updates.status : currentStatusFilter
 
     if (nextStart) params.set('start', nextStart)
     else params.delete('start')
-
-    if (nextStaff) params.set('staff', nextStaff)
-    else params.delete('staff')
 
     if (nextStatus && nextStatus !== 'active') params.set('status', nextStatus)
     else params.delete('status')
@@ -201,27 +191,6 @@ export function CalendarView({
 
         {/* Filters and New Booking Modal */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Staff Filter */}
-          <div className="flex items-center gap-1.5 rounded-2xl border border-border bg-surface px-3 py-1.5 text-xs text-ink-muted">
-            <Users className="h-3.5 w-3.5 text-ink-muted shrink-0" aria-hidden="true" />
-            <select
-              value={currentStaffFilter}
-              onChange={(e) => updateQuery({ staff: e.target.value || null })}
-              disabled={isPending}
-              className="bg-transparent font-medium text-[#172033] outline-none cursor-pointer"
-              aria-label={rtl ? 'تصفية حسب عضو الفريق' : 'Filter by staff member'}
-            >
-              <option value="">
-                {rtl ? 'جميع أعضاء الفريق' : 'All team members'}
-              </option>
-              {staffList.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Status Filter */}
           <div className="flex items-center gap-1.5 rounded-2xl border border-border bg-surface px-3 py-1.5 text-xs text-ink-muted">
             <Filter className="h-3.5 w-3.5 text-ink-muted shrink-0" aria-hidden="true" />
@@ -253,7 +222,6 @@ export function CalendarView({
               locale={locale}
               currency={currency}
               services={servicesList}
-              staff={staffList}
             />
           )}
         </div>
@@ -311,9 +279,6 @@ export function CalendarView({
                     const serviceNames = b.items
                       .map((it) => it.serviceName)
                       .filter(Boolean)
-                    const staffNames = Array.from(
-                      new Set(b.items.map((it) => it.staffName).filter(Boolean))
-                    )
 
                     return (
                       <button
@@ -356,10 +321,12 @@ export function CalendarView({
                           )}
                         </div>
 
-                        {/* Staff & source row */}
+                        {/* Source / Creator & Price row */}
                         <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-1.5 text-[10px] text-ink-muted">
-                          <span className="truncate max-w-[90px]">
-                            {staffNames.join(', ') || (rtl ? 'فريق العمل' : 'Staff')}
+                          <span className="truncate max-w-[110px]">
+                            {b.source === 'dashboard'
+                              ? (b.createdByName || (rtl ? 'حجز يدوي' : 'Manual'))
+                              : (rtl ? 'أونلاين' : 'Online')}
                           </span>
                           <span className="font-semibold text-[#172033]">
                             {b.totalPrice > 0 ? `${b.totalPrice} ${currency}` : `${durationMin} ${rtl ? 'د' : 'm'}`}
@@ -512,6 +479,17 @@ export function CalendarView({
                 </div>
               </div>
 
+              {selectedBooking.source === 'dashboard' && selectedBooking.createdByName && (
+                <div className="flex items-center justify-between rounded-2xl border border-purple-200/70 bg-purple-50/50 px-4 py-2.5 text-xs">
+                  <span className="text-ink-muted">
+                    {rtl ? 'الموظف المسؤول:' : 'Responsible staff:'}
+                  </span>
+                  <span className="font-semibold text-purple-900">
+                    {selectedBooking.createdByName}
+                  </span>
+                </div>
+              )}
+
               {/* Multi-service breakdown */}
               <div className="rounded-2xl border border-border bg-surface p-4 space-y-3">
                 <h4 className="font-semibold text-[#172033]">
@@ -528,10 +506,6 @@ export function CalendarView({
                           {item.serviceName}
                         </p>
                         <div className="flex items-center gap-2 text-[11px] text-ink-muted mt-0.5">
-                          <span>
-                            {rtl ? 'المسند إليه:' : 'Staff:'} {item.staffName}
-                          </span>
-                          <span>·</span>
                           <span>
                             {item.durationMin} {rtl ? 'دقيقة' : 'min'}
                           </span>

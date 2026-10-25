@@ -337,9 +337,9 @@ describe('responsive service cards', () => {
     expect(all[0].className).toContain('sm:flex-col')
   })
 
-  it('gives the mobile thumbnail a fixed 24x24 square and a full-width band from sm', () => {
+  it('gives the mobile thumbnail a fixed width and a full-width band from sm', () => {
     const nodes = render(configWith({}))
-    const box = nodes.find((n) => n.className.includes('h-24') && n.className.includes('w-24'))
+    const box = nodes.find((n) => n.className.includes('w-[110px]'))
     expect(box).toBeTruthy()
     expect(box!.className).toContain('sm:w-full')
     expect(box!.className).toContain('sm:aspect-[16/10]')
@@ -350,19 +350,19 @@ describe('responsive service cards', () => {
   })
 
   it('uses logical (direction-aware) rounding, not an LTR-only trick', () => {
-    const box = render(configWith({})).find((n) => n.className.includes('h-24') && n.className.includes('w-24'))!
+    const box = render(configWith({})).find((n) => n.className.includes('w-[110px]'))!
     expect(box.className).toContain('rounded-s-2xl')
     expect(box.className).toContain('sm:rounded-s-none')
   })
 
-  it('reduces mobile padding to p-3 and restores p-6 from sm', () => {
-    const body = render(configWith({})).find((n) => n.className.includes('p-3') && n.className.includes('sm:p-6'))
+  it('reduces mobile padding to p-3 and restores p-5 from sm', () => {
+    const body = render(configWith({})).find((n) => n.className.includes('p-3') && n.className.includes('sm:p-5'))
     expect(body).toBeTruthy()
   })
 
   it('shows the Clock3 duration and a prominent price', () => {
     const nodes = render(configWith({}))
-    const meta = nodes.find((n) => n.className.includes('gap-x-3') && n.className.includes('flex-wrap'))
+    const meta = nodes.find((n) => n.className.includes('gap-x-2') && n.className.includes('flex-wrap'))
     expect(meta).toBeTruthy()
     const texts = nodes.map((n) => textOf(n.children)).join(' | ')
     expect(texts).toContain('دقيقة')
@@ -384,7 +384,7 @@ describe('responsive service cards', () => {
   })
 
   it('keeps the 16:10 ratio for the desktop image band', () => {
-    const box = render(configWith({})).find((n) => n.className.includes('h-24') && n.className.includes('w-24'))!
+    const box = render(configWith({})).find((n) => n.className.includes('w-[110px]'))!
     expect(box.className).toContain('sm:aspect-[16/10]')
   })
 
@@ -397,11 +397,10 @@ describe('responsive service cards', () => {
     expect(lazy.length).toBeGreaterThan(0)
   })
 
-  it('makes the booking action full-width from sm and self-start on mobile', () => {
+  it('makes the booking action full-width from sm and compact on mobile', () => {
     const link = render(configWith({})).find((n) => String(n.href ?? '').includes('?service='))!
-    expect(link.className).toContain('w-fit')
     expect(link.className).toContain('sm:w-full')
-    expect(link.className).toContain('self-start')
+    expect(link.className).toContain('shrink-0')
   })
 
   it('keeps the card min-w-0 so long text cannot blow out the grid', () => {

@@ -1,13 +1,14 @@
 'use server'
 
 import { headers } from 'next/headers'
-import { aliasedTable, and, eq, gt, gte, isNull, lte, lt, not, or } from 'drizzle-orm'
+import { aliasedTable, and, eq, gt, gte, inArray, isNull, lte, lt, not, or } from 'drizzle-orm'
 import { z } from 'zod'
 import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
 import { checkRateLimit } from '@/lib/rate-limit'
-import { bookings, bookingItems, customers, dateOverrides, services, serviceTranslations, staff, tenants, workingHours } from '@/lib/db/schema'
+import { bookings, bookingItems, customers, dateOverrides, services, serviceTranslations, tenants, workingHours } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
+import { assertTenantBookingCapacity, calculatePeakConcurrency } from '@/lib/booking-capacity'
 
 const bookingSchema = z.object({
   slug: z.string().min(2).max(80),
@@ -37,26 +38,30 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
     }
   }
 
-  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, data.slug) })
+  let tenant: any
+  try {
+    tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, data.slug) })
+  } catch (err: any) {
+    if (err?.code === '42703') {
+      const rows = await db
+        .select({
+          id: tenants.id,
+          slug: tenants.slug,
+          status: tenants.status,
+          timezone: tenants.timezone,
+        })
+        .from(tenants)
+        .where(eq(tenants.slug, data.slug))
+        .limit(1)
+      tenant = rows[0]
+    } else {
+      throw err
+    }
+  }
   if (!tenant) return { ok: false as const, message: data.locale === 'ar' ? 'المساحة غير موجودة.' : 'Workspace not found.' }
 
   const service = await db.query.services.findFirst({ where: and(eq(services.id, data.serviceId), eq(services.tenantId, tenant.id), eq(services.isActive, true)) })
   if (!service) return { ok: false as const, message: data.locale === 'ar' ? 'الخدمة غير موجودة.' : 'Service not found.' }
-
-  const availableStaff = await db
-    .select({ id: staff.id })
-    .from(staff)
-    .where(and(eq(staff.tenantId, tenant.id), eq(staff.isActive, true), isNull(staff.deletedAt)))
-    .orderBy(staff.sortOrder)
-
-  if (availableStaff.length === 0) {
-    return {
-      ok: false as const,
-      message: data.locale === 'ar'
-        ? 'لا يوجد موظفون متاحون حالياً لهذا الموعد.'
-        : 'No staff members are currently available for this appointment.',
-    }
-  }
 
   const start = new Date(data.startsAt)
   if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
@@ -90,41 +95,19 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
       const blockStart = new Date(start.getTime() - service.bufferBeforeMin * 60_000)
       const blockEnd = new Date(end.getTime() + service.bufferAfterMin * 60_000)
 
-      let assignedStaff: { id: string } | null = null
-      for (const candidate of availableStaff) {
-        const isBusy = await tx
-          .select({ id: bookingItems.id })
-          .from(bookingItems)
-          .innerJoin(bookings, eq(bookings.id, bookingItems.bookingId))
-          .where(
-            and(
-              eq(bookingItems.tenantId, tenant.id),
-              eq(bookingItems.staffId, candidate.id),
-              not(eq(bookings.status, 'cancelled')),
-              lt(bookingItems.blockStartsAt, blockEnd),
-              gt(bookingItems.blockEndsAt, blockStart)
-            )
-          )
-          .limit(1)
-
-        if (isBusy.length === 0) {
-          assignedStaff = candidate
-          break
-        }
-      }
-
-      if (!assignedStaff) {
-        const err = new Error('NO_STAFF_AVAILABLE')
+      const capacityCheck = await assertTenantBookingCapacity(tx, tenant.id, blockStart, blockEnd)
+      if (!capacityCheck.allowed) {
+        const err = new Error('TENANT_CAPACITY_EXCEEDED')
         ;(err as any).code = '23P01'
         throw err
       }
 
       const booking = await tx.insert(bookings).values({ tenantId: tenant.id, customerId, source: 'online', locale: data.locale, idempotencyKey, startsAt: start, endsAt: end }).returning({ id: bookings.id })
-      await tx.insert(bookingItems).values({ tenantId: tenant.id, bookingId: booking[0].id, serviceId: service.id, staffId: assignedStaff.id, startsAt: start, endsAt: end, blockStartsAt: blockStart, blockEndsAt: blockEnd, priceAmount: service.priceAmount })
+      await tx.insert(bookingItems).values({ tenantId: tenant.id, bookingId: booking[0].id, serviceId: service.id, staffId: null, startsAt: start, endsAt: end, blockStartsAt: blockStart, blockEndsAt: blockEnd, priceAmount: service.priceAmount })
       return booking[0]
     })
   } catch (error: any) {
-    if (error.code === '23P01') {
+    if (error.code === '23P01' || error.message === 'TENANT_CAPACITY_EXCEEDED') {
       const suggestions = availableSlots.filter(s => new Date(s) > start).slice(0, 3)
       return { ok: false as const, message: data.locale === 'ar' ? 'هذا الوقت لم يعد متاحاً. اختر وقتاً آخر.' : 'That time is no longer available. Choose another time.', suggestions }
     }
@@ -161,7 +144,26 @@ export async function getAvailableSlots(slug: string, date: string, serviceId?: 
   const rl = await checkRateLimit(`slots:ip:${ip}`, 60, 60_000)
   if (!rl.allowed) return []
 
-  const tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) })
+  let tenant: any
+  try {
+    tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) })
+  } catch (err: any) {
+    if (err?.code === '42703') {
+      const rows = await db
+        .select({
+          id: tenants.id,
+          slug: tenants.slug,
+          status: tenants.status,
+          timezone: tenants.timezone,
+        })
+        .from(tenants)
+        .where(eq(tenants.slug, slug))
+        .limit(1)
+      tenant = rows[0]
+    } else {
+      throw err
+    }
+  }
   if (!tenant || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) return []
   if (tenant.status !== 'active') return []
   const day = new Date(`${date}T12:00:00Z`).getUTCDay()
@@ -209,6 +211,28 @@ export async function getAvailableSlots(slug: string, date: string, serviceId?: 
     ? overrides.filter((override) => override.kind === 'custom_hours').map((override) => ({ startTime: override.startTime!, endTime: override.endTime! }))
     : hours
 
+  // Query active bookings for this tenant on the day to evaluate capacity
+  const dayStart = new Date(startUtc)
+  const dayEnd = new Date(endUtc)
+  const tenantCapacity = Math.max(1, tenant.bookingCapacity ?? 1)
+
+  const activeBookingItems = await db
+    .select({
+      bookingId: bookingItems.bookingId,
+      blockStartsAt: bookingItems.blockStartsAt,
+      blockEndsAt: bookingItems.blockEndsAt,
+    })
+    .from(bookingItems)
+    .innerJoin(bookings, eq(bookings.id, bookingItems.bookingId))
+    .where(
+      and(
+        eq(bookingItems.tenantId, tenant.id),
+        inArray(bookings.status, ['pending', 'confirmed']),
+        lt(bookingItems.blockStartsAt, dayEnd),
+        gt(bookingItems.blockEndsAt, dayStart)
+      )
+    )
+
   for (let time = startUtc; time <= endUtc; time += 30 * 60000) {
     if (time < nowMs + minNoticeMs || time > nowMs + maxNoticeMs) continue
     const d = new Date(time)
@@ -224,7 +248,18 @@ export async function getAvailableSlots(slug: string, date: string, serviceId?: 
           minutes - service.bufferBeforeMin >= sh * 60 + sm &&
           minutes + service.durationMin + service.bufferAfterMin <= eh * 60 + em
         ) {
-          availableSlotSet.add(d.toISOString())
+          const slotBlockStart = new Date(time - service.bufferBeforeMin * 60_000)
+          const slotBlockEnd = new Date(time + (service.durationMin + service.bufferAfterMin) * 60_000)
+
+          const peakConcurrency = calculatePeakConcurrency(
+            activeBookingItems,
+            slotBlockStart,
+            slotBlockEnd
+          )
+
+          if (peakConcurrency < tenantCapacity) {
+            availableSlotSet.add(d.toISOString())
+          }
           break
         }
       }

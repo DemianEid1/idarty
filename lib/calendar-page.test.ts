@@ -25,12 +25,12 @@ describe('calendar page: authorization and tenant scoping contracts', () => {
     expect(calendarPage).toContain('inArray(bookingItems.bookingId, bIds)')
   })
 
-  it('scopes services and staff queries strictly to active tenant', () => {
+  it('scopes service and staff queries strictly to active tenant', () => {
     expect(calendarPage).toContain('eq(services.tenantId, access.tenant.id)')
     expect(calendarPage).toContain('eq(services.isActive, true)')
-    expect(calendarPage).toContain('eq(staff.tenantId, access.tenant.id)')
-    expect(calendarPage).toContain('eq(staff.isActive, true)')
-    expect(calendarPage).toContain('isNull(staff.deletedAt)')
+    // The creator-provenance join still resolves the staff member who created the
+    // booking; that is unrelated to booking-item staff assignment.
+    expect(calendarPage).toContain('eq(calCreatorStaff.tenantId, access.tenant.id)')
   })
 })
 
@@ -41,9 +41,8 @@ describe('calendar page: multi-service aggregation and single-event invariant', 
     expect(calendarPage).toContain('aggregatedBookings')
   })
 
-  it('joins service and staff translations with fallback locale', () => {
+  it('joins service translations with fallback locale', () => {
     expect(calendarPage).toContain('fallbackServiceTranslations')
-    expect(calendarPage).toContain('fallbackStaffTranslations')
   })
 
   it('buckets bookings into the 7-day week map without duplication', () => {
@@ -53,16 +52,17 @@ describe('calendar page: multi-service aggregation and single-event invariant', 
 })
 
 describe('calendar page: date, staff, and status filtering', () => {
-  it('reads searchParams for start date, staff, and status', () => {
+  it('reads searchParams for start date and status', () => {
     expect(calendarPage).toContain('parseStartDate(searchParams.start)')
-    expect(calendarPage).toContain('isValidStaffId(searchParams.staff)')
     expect(calendarPage).toContain("searchParams.status || 'active'")
   })
 
-  it('validates staff filter against tenant staff members and scopes query', () => {
-    expect(calendarPage).toContain('staffRows.some((s) => s.id === rawStaffId)')
-    expect(calendarPage).toContain('eq(bookingItems.staffId, validStaffId)')
-    expect(calendarPage).toContain('eq(bookingItems.tenantId, access.tenant.id)')
+  it('no longer filters bookings by assigned staff member', () => {
+    // Bookings are tenant-scoped. The staff filter, its validation helper and the
+    // bookingItems.staffId predicate are removed from the calendar page.
+    expect(calendarPage).not.toContain('isValidStaffId(searchParams.staff)')
+    expect(calendarPage).not.toContain('eq(bookingItems.staffId, validStaffId)')
+    expect(calendarPage).not.toContain('staffRows.some((s) => s.id === rawStaffId)')
   })
 
   it('excludes cancelled bookings by default while supporting all and specific statuses', () => {

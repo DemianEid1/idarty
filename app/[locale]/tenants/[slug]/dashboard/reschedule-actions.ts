@@ -2,12 +2,13 @@
 
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { bookingItems, bookings, customers } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { logAudit } from '@/lib/audit'
+import { assertTenantBookingCapacity } from '@/lib/booking-capacity'
 
 const inputSchema = z.object({ slug: z.string().min(2), bookingId: z.string().uuid(), startsAt: z.string().datetime() })
 
@@ -26,11 +27,33 @@ export async function rescheduleBooking(input: z.infer<typeof inputSchema>) {
   const blockEnd = new Date(end.getTime() + bufferAfterMs)
   try {
     await db.transaction(async (tx) => {
-      await tx.update(bookings).set({ startsAt: start, endsAt: end, updatedAt: new Date() }).where(and(eq(bookings.id, data.bookingId), eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'confirmed')))
+      const capacityCheck = await assertTenantBookingCapacity(
+        tx,
+        access.tenant.id,
+        blockStart,
+        blockEnd,
+        data.bookingId
+      )
+      if (!capacityCheck.allowed) {
+        const err = new Error('TENANT_CAPACITY_EXCEEDED')
+        ;(err as any).code = '23P01'
+        throw err
+      }
+
+      // A zero-row match means the booking is no longer 'confirmed' (cancelled,
+      // no-show, completed) or no longer belongs to this tenant. Treat it as a
+      // state conflict, not a success: the audit event and confirmation email
+      // below must never fire for a reschedule that changed nothing.
+      const [updatedBooking] = await tx.update(bookings).set({ startsAt: start, endsAt: end, updatedAt: new Date() }).where(and(eq(bookings.id, data.bookingId), eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'confirmed'))).returning({ id: bookings.id })
+      if (!updatedBooking) {
+        const err = new Error('BOOKING_NOT_ACTIVE')
+        ;(err as any).code = '23P01'
+        throw err
+      }
       await tx.update(bookingItems).set({ startsAt: start, endsAt: end, blockStartsAt: blockStart, blockEndsAt: blockEnd }).where(and(eq(bookingItems.bookingId, data.bookingId), eq(bookingItems.tenantId, access.tenant.id)))
     })
   } catch (error: any) {
-    if (error.code === '23P01') return { ok: false as const, message: 'Time is no longer available' }
+    if (error.code === '23P01' || error.message === 'TENANT_CAPACITY_EXCEEDED' || error.message === 'BOOKING_NOT_ACTIVE') return { ok: false as const, message: 'Booking is no longer active' }
     throw error
   }
   await logAudit({

@@ -166,4 +166,137 @@ describe('authorization failure audit', () => {
     expect(result.user.id).toBe('admin-123')
     expect(logAuditCalls.length).toBe(0)
   })
+
+  it('rethrows unexpected database errors without converting to FORBIDDEN', async () => {
+    const { requireTenantAccess } = await import('./authz')
+    const { db } = await import('@/lib/db')
+
+    const dbError = new Error('column tenants.booking_capacity does not exist')
+    const selectMock = vi.fn(() => ({
+      from: vi.fn(() => ({
+        innerJoin: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn(() => {
+              throw dbError
+            }),
+          })),
+        })),
+      })),
+    }))
+    ;(db as any).select = selectMock
+
+    const headers = new Headers({ 'x-forwarded-for': '10.0.0.6' })
+
+    await expect(
+      requireTenantAccess(headers, 'test-tenant')
+    ).rejects.toThrow('column tenants.booking_capacity does not exist')
+  })
+
+  it('rethrows UNAUTHORIZED when requireSession fails', async () => {
+    const { requireTenantAccess } = await import('./authz')
+    const { requireSession } = await import('@/lib/auth')
+
+    ;(requireSession as any).mockRejectedValueOnce(new Error('UNAUTHORIZED'))
+
+    const headers = new Headers({ 'x-forwarded-for': '10.0.0.7' })
+
+    await expect(
+      requireTenantAccess(headers, 'test-tenant')
+    ).rejects.toThrow('UNAUTHORIZED')
+  })
+
+  it('reads configured bookingCapacity when column is available in database', async () => {
+    const { requireTenantAccess, setBookingCapacityColumnAvailable } = await import('./authz')
+    const { db } = await import('@/lib/db')
+    const { requireSession } = await import('@/lib/auth')
+
+    setBookingCapacityColumnAvailable(true)
+    ;(requireSession as any).mockResolvedValueOnce({ user: { id: 'user-cap-1' } })
+
+    const mockRow = {
+      tenant: {
+        id: 't-123',
+        slug: 'cap-tenant',
+        status: 'active',
+        businessType: 'salon',
+        defaultLocale: 'ar',
+        supportedLocales: ['ar', 'en'],
+        timezone: 'Africa/Cairo',
+        currency: 'EGP',
+        bookingCapacity: 3,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      membership: {
+        id: 'm-123',
+        tenantId: 't-123',
+        userId: 'user-cap-1',
+        role: 'owner',
+        status: 'active',
+        createdAt: new Date(),
+      },
+    }
+
+    ;(db as any).select = vi.fn(() => ({
+      from: vi.fn(() => ({
+        innerJoin: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue([mockRow]),
+          })),
+        })),
+      })),
+    }))
+
+    const headers = new Headers({ 'x-forwarded-for': '10.0.0.8' })
+    const access = await requireTenantAccess(headers, 'cap-tenant')
+    expect(access.tenant.bookingCapacity).toBe(3)
+    setBookingCapacityColumnAvailable(null)
+  })
+
+  it('falls back to bookingCapacity: 1 when column is not yet present', async () => {
+    const { requireTenantAccess, setBookingCapacityColumnAvailable } = await import('./authz')
+    const { db } = await import('@/lib/db')
+    const { requireSession } = await import('@/lib/auth')
+
+    setBookingCapacityColumnAvailable(false)
+    ;(requireSession as any).mockResolvedValueOnce({ user: { id: 'user-cap-2' } })
+
+    const mockRow = {
+      tenant: {
+        id: 't-456',
+        slug: 'nocap-tenant',
+        status: 'active',
+        businessType: 'salon',
+        defaultLocale: 'ar',
+        supportedLocales: ['ar', 'en'],
+        timezone: 'Africa/Cairo',
+        currency: 'EGP',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      membership: {
+        id: 'm-456',
+        tenantId: 't-456',
+        userId: 'user-cap-2',
+        role: 'owner',
+        status: 'active',
+        createdAt: new Date(),
+      },
+    }
+
+    ;(db as any).select = vi.fn(() => ({
+      from: vi.fn(() => ({
+        innerJoin: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue([mockRow]),
+          })),
+        })),
+      })),
+    }))
+
+    const headers = new Headers({ 'x-forwarded-for': '10.0.0.9' })
+    const access = await requireTenantAccess(headers, 'nocap-tenant')
+    expect(access.tenant.bookingCapacity).toBe(1)
+    setBookingCapacityColumnAvailable(null)
+  })
 })

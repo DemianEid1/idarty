@@ -16,10 +16,6 @@ export interface ManualBookingModalProps {
     durationMin: number
     priceAmount: string
   }>
-  staff: Array<{
-    id: string
-    name: string
-  }>
 }
 
 function getDefaultDateTime(): string {
@@ -35,7 +31,6 @@ export function ManualBookingModal({
   locale,
   currency,
   services,
-  staff,
 }: ManualBookingModalProps) {
   const rtl = locale === 'ar'
   const { toast } = useToast()
@@ -47,20 +42,15 @@ export function ManualBookingModal({
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [selectedServiceId, setSelectedServiceId] = useState(services[0]?.id || '')
-  const [selectedStaffId, setSelectedStaffId] = useState('')
   const [startsAt, setStartsAt] = useState(getDefaultDateTime)
   const [customerNote, setCustomerNote] = useState('')
   const [internalNote, setInternalNote] = useState('')
-
-  // All active staff are eligible for any service (decoupled staff-services model)
-  const eligibleStaff = staff
 
   function resetForm() {
     setCustomerName('')
     setCustomerPhone('')
     setCustomerEmail('')
     setSelectedServiceId(services[0]?.id || '')
-    setSelectedStaffId('')
     setStartsAt(getDefaultDateTime())
     setCustomerNote('')
     setInternalNote('')
@@ -110,7 +100,6 @@ export function ManualBookingModal({
           customerPhone: customerPhone.trim(),
           customerEmail: customerEmail.trim() || undefined,
           serviceId: selectedServiceId,
-          staffId: selectedStaffId || undefined,
           startsAt: startDate.toISOString(),
           customerNote: customerNote.trim() || undefined,
           internalNote: internalNote.trim() || undefined,

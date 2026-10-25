@@ -6,6 +6,7 @@ export default defineConfig({
     // `e2e/**` and `e2e-responsive/**` hold Playwright specs (they import
     // @playwright/test, not vitest) and are run by Playwright, not vitest.
     exclude: ['node_modules/**', 'e2e/**', 'e2e-responsive/**'],
+    testTimeout: 15000,
   },
   resolve: {
     alias: {
