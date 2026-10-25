@@ -87,7 +87,7 @@ export default async function DashboardLayout({
       {/* Ends the pending state when the URL commits. Renders nothing; it sits
           outside the content area so it is never part of a loading swap. */}
       <NavigationCommitWatcher />
-      <div className="mx-auto flex min-h-screen max-w-7xl">
+      <div className="flex min-h-screen w-full">
         {/* Desktop sidebar — pinned, independently scrollable, and now part of
             the persistent layout so it never remounts on tab navigation. */}
         <aside className="hidden w-64 shrink-0 border-e border-border bg-paper lg:sticky lg:top-0 lg:h-screen lg:flex lg:flex-col">
@@ -111,38 +111,40 @@ export default async function DashboardLayout({
           )}
         </aside>
 
-        <section className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:p-10">
-          {/* The header is part of the persistent shell too: the user's name and
-              role are already resolved, so it never re-mounts or flickers. */}
-          <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <DashboardMobileNav
-                locale={typedLocale}
-                items={nav}
-                adminHref={isAdmin ? `/${typedLocale}/admin` : undefined}
-                adminLabel={adminLabel}
-              />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-ink-muted">{access.session.user.name}</p>
-                <h1 className="mt-2 break-words text-2xl font-semibold tracking-tight sm:text-3xl">{tenantDisplayName}</h1>
-                <p className="mt-2 text-sm text-ink-muted">{t.subtitle}</p>
+        <section className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-6">
+          <div className="max-w-7xl">
+            {/* The header is part of the persistent shell too: the user's name and
+                role are already resolved, so it never re-mounts or flickers. */}
+            <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <DashboardMobileNav
+                  locale={typedLocale}
+                  items={nav}
+                  adminHref={isAdmin ? `/${typedLocale}/admin` : undefined}
+                  adminLabel={adminLabel}
+                />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-ink-muted">{access.session.user.name}</p>
+                  <h1 className="mt-1 break-words text-2xl font-semibold tracking-tight sm:text-3xl">{tenantDisplayName}</h1>
+                  <p className="mt-1.5 text-sm text-ink-muted">{t.subtitle}</p>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
-              {isAdmin && <a href={`/${typedLocale}/admin`} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 outline-none transition hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500">{rtl ? 'الإدارة' : 'Admin'}</a>}
-              <span className="rounded-full bg-[#eaf8f1] px-3 py-1.5 text-xs font-semibold text-[#24865b]">{access.membership.role}</span>
-              <LocaleSwitcher currentLocale={typedLocale} />
-              <SignOutButton label={rtl ? 'تسجيل الخروج' : 'Sign out'} locale={typedLocale} />
-            </div>
-          </header>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
+                {isAdmin && <a href={`/${typedLocale}/admin`} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 outline-none transition hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500">{rtl ? 'الإدارة' : 'Admin'}</a>}
+                <span className="rounded-full bg-[#eaf8f1] px-3 py-1.5 text-xs font-semibold text-[#24865b]">{access.membership.role}</span>
+                <LocaleSwitcher currentLocale={typedLocale} />
+                <SignOutButton label={rtl ? 'تسجيل الخروج' : 'Sign out'} locale={typedLocale} />
+              </div>
+            </header>
 
-          {/* Only the active tab's content is replaced by the loading state.
-              `ContentPending` shows the same skeleton as `loading.tsx` while a
-              `?tab=` transition is in flight — the route-level fallback cannot
-              cover that case, because React does not re-show an already-revealed
-              Suspense boundary. The sidebar and header live outside this wrapper
-              and stay mounted. */}
-          <ContentPending rtl={rtl}>{children}</ContentPending>
+            {/* Only the active tab's content is replaced by the loading state.
+                `ContentPending` shows the same skeleton as `loading.tsx` while a
+                `?tab=` transition is in flight — the route-level fallback cannot
+                cover that case, because React does not re-show an already-revealed
+                Suspense boundary. The sidebar and header live outside this wrapper
+                and stay mounted. */}
+            <ContentPending rtl={rtl}>{children}</ContentPending>
+          </div>
         </section>
       </div>
     </main>

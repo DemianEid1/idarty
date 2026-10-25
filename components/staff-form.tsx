@@ -49,13 +49,13 @@ export function StaffForm({
         required
         name="name"
         placeholder={rtl ? 'اسم الموظف' : 'Staff name'}
-        className="h-11 rounded-xl border border-[#e1e5ed] px-3 text-sm outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
+        className="h-11 w-full rounded-xl border border-[#e1e5ed] px-3 text-sm outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
       />
 
       <select
         name="role"
         defaultValue="receptionist"
-        className="h-11 rounded-xl border border-[#e1e5ed] bg-paper px-3 text-sm text-ink outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
+        className="h-11 w-full rounded-xl border border-[#e1e5ed] bg-paper px-3 text-sm text-ink outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
       >
         <option value="receptionist">{rtl ? 'موظف استقبال' : 'Receptionist'}</option>
         <option value="manager">{rtl ? 'مدير' : 'Manager'}</option>
@@ -68,18 +68,24 @@ export function StaffForm({
         name="email"
         type="email"
         placeholder={rtl ? 'البريد الإلكتروني (للدعوة)' : 'Email (for invitation)'}
-        className="h-11 rounded-xl border border-[#e1e5ed] px-3 text-sm outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
+        className="h-11 w-full rounded-xl border border-[#e1e5ed] px-3 text-sm outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
       />
 
-      <div className="flex gap-2">
-        <input
-          name="phone"
-          placeholder={rtl ? 'الهاتف (010...)' : 'Phone (e.g. 010...)'}
-          className="h-11 min-w-0 flex-1 rounded-xl border border-[#e1e5ed] px-3 text-sm outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
-        />
+      <input
+        name="phone"
+        placeholder={rtl ? 'الهاتف (010...)' : 'Phone (e.g. 010...)'}
+        className="h-11 w-full rounded-xl border border-[#e1e5ed] px-3 text-sm outline-none transition focus-visible:border-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal/20"
+      />
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:col-span-2 lg:col-span-4">
+        {message ? (
+          <p className="text-xs text-[#24865b]">{message}</p>
+        ) : (
+          <span className="hidden sm:inline-block" />
+        )}
         <button
           disabled={pending}
-          className="h-11 shrink-0 rounded-xl bg-brand-teal px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-50"
+          className="h-11 w-full sm:w-auto shrink-0 rounded-xl bg-brand-teal px-6 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 disabled:opacity-50 cursor-pointer"
         >
           {pending ? '...' : rtl ? 'إضافة موظف' : 'Add staff'}
         </button>

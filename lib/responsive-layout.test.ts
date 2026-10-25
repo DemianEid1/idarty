@@ -115,7 +115,7 @@ describe('mobile card padding is consistent and fluid', () => {
   })
 
   it('the outer section uses fluid padding, not a fixed p-4', () => {
-    expect(shell).toContain('min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:p-10')
+    expect(shell).toContain('min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-6')
   })
 })
 

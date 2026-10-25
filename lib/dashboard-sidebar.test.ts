@@ -83,7 +83,7 @@ describe('3. content is offset correctly, with no overlap or double scroll', () 
   it('relies on the flex sibling layout rather than a manual offset', () => {
     // The sidebar and content are siblings in a flex row, so the content is
     // offset by the sidebar's width automatically.
-    expect(shell).toContain('mx-auto flex min-h-screen max-w-7xl')
+    expect(shell).toContain('flex min-h-screen w-full')
     // No manual padding that would double up with the flex offset.
     expect(shell).not.toContain('lg:pl-64')
     expect(shell).not.toContain('lg:pr-64')
@@ -97,7 +97,7 @@ describe('3. content is offset correctly, with no overlap or double scroll', () 
   })
 
   it('the content column can shrink and never causes horizontal overflow', () => {
-    expect(shell).toContain('min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:p-10')
+    expect(shell).toContain('min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-6')
   })
 
   it('does not introduce a second scroll container on the content column', () => {

@@ -552,25 +552,25 @@ export default async function TenantDashboard(props: {
 
             {/* Standalone public website link card: identity + copy/open actions.
                 Kept out of the Quick Actions row so the website actions are not
-                duplicated and the row stays compact. */}
+                duplicated and the row stays compact. Grouped with quick actions. */}
             <div className="mt-6">
               <PublicWebsiteLink url={publicUrl} locale={locale} siteName={tenantDisplayName} />
-            </div>
 
-            {/* Quick actions: the common owner tasks, kept to one compact row. */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <a href="?tab=services" className="inline-flex items-center gap-2 rounded-xl bg-brand-teal px-4 py-2.5 text-sm font-semibold text-white outline-none transition hover:bg-[#0d6560] focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
-                <Plus aria-hidden="true" className="h-4 w-4 shrink-0" />
-                {rtl ? 'إضافة خدمة' : 'Add service'}
-              </a>
-              <a href="?tab=team" className="inline-flex items-center gap-2 rounded-xl border border-border bg-paper px-4 py-2.5 text-sm font-semibold text-[#374151] outline-none transition hover:border-brand-teal hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
-                <Users aria-hidden="true" className="h-4 w-4 shrink-0" />
-                {rtl ? 'إضافة عضو فريق' : 'Add team member'}
-              </a>
-              <a href="?tab=website" className="inline-flex items-center gap-2 rounded-xl border border-border bg-paper px-4 py-2.5 text-sm font-semibold text-[#374151] outline-none transition hover:border-brand-teal hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
-                <Pencil aria-hidden="true" className="h-4 w-4 shrink-0" />
-                {rtl ? 'تعديل الموقع' : 'Edit website'}
-              </a>
+              {/* Quick actions: the common owner tasks, kept to one compact row. */}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a href="?tab=services" className="inline-flex items-center gap-2 rounded-xl bg-brand-teal px-4 py-2.5 text-sm font-semibold text-white outline-none transition hover:bg-[#0d6560] focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
+                  <Plus aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  {rtl ? 'إضافة خدمة' : 'Add service'}
+                </a>
+                <a href="?tab=team" className="inline-flex items-center gap-2 rounded-xl border border-border bg-paper px-4 py-2.5 text-sm font-semibold text-[#374151] outline-none transition hover:border-brand-teal hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
+                  <Users aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  {rtl ? 'إضافة عضو فريق' : 'Add team member'}
+                </a>
+                <a href="?tab=website" className="inline-flex items-center gap-2 rounded-xl border border-border bg-paper px-4 py-2.5 text-sm font-semibold text-[#374151] outline-none transition hover:border-brand-teal hover:text-brand-teal focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2">
+                  <Pencil aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  {rtl ? 'تعديل الموقع' : 'Edit website'}
+                </a>
+              </div>
             </div>
 
             {onboardingComplete ? (
@@ -580,7 +580,7 @@ export default async function TenantDashboard(props: {
                 <OnboardingSuccess locale={locale} storageKey={`idarty:onboarding-success:${access.tenant.id}`} />
               </div>
             ) : (
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-8">
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-semibold tracking-tight">{rtl ? 'خطوات البدء' : 'Getting started'}</h2>
