@@ -1,16 +1,16 @@
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, or, sql, aliasedTable } from 'drizzle-orm'
 import { Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { requireTenantAccess } from '@/lib/authz'
 import { db } from '@/lib/db'
-import { tenantTranslations } from '@/lib/db/schema'
+import { staff, staffTranslations, tenantTranslations } from '@/lib/db/schema'
 import { Logo } from '@/components/logo'
 import { LocaleSwitcher } from '@/components/locale-switcher'
-import { SignOutButton } from '@/components/sign-out-button'
 import { DashboardMobileNav } from '@/components/dashboard-mobile-nav'
 import { DashboardSidebarLink } from '@/components/dashboard-sidebar-link'
+import { DashboardUserMenu } from '@/components/dashboard-user-menu'
 import { ContentPending } from '@/components/content-pending'
 import { NavigationCommitWatcher } from '@/components/navigation-commit-watcher'
 import { dashboardCopy, buildDashboardNav } from '@/lib/dashboard-nav'
@@ -69,17 +69,64 @@ export default async function DashboardLayout({
   }
 
   const typedLocale = locale as Locale
+  const fallbackLocale = typedLocale === 'ar' ? 'en' : 'ar'
   const rtl = typedLocale === 'ar'
   const t = dashboardCopy[typedLocale]
-  const nav = buildDashboardNav(typedLocale)
+  const nav = buildDashboardNav(typedLocale, access.membership.role)
   const isAdmin = (access.session.user as { isPlatformAdmin?: boolean }).isPlatformAdmin === true
   const adminLabel = rtl ? 'لوحة الإدارة' : 'Admin Panel'
 
+  const fallbackStaffTranslations = aliasedTable(staffTranslations, 'layout_fb_staff_trans')
+
   // The workspace name for the header. Only the translation row is fetched here;
   // the page keeps its own copy of this query for the data it renders.
-  const tenantTranslation = await db.query.tenantTranslations.findFirst({
-    where: and(eq(tenantTranslations.tenantId, access.tenant.id), eq(tenantTranslations.locale, typedLocale)),
-  })
+  const [tenantTranslation, userStaff] = await Promise.all([
+    db.query.tenantTranslations.findFirst({
+      where: and(eq(tenantTranslations.tenantId, access.tenant.id), eq(tenantTranslations.locale, typedLocale)),
+    }),
+    db
+      .select({
+        name: staffTranslations.name,
+        fallbackName: fallbackStaffTranslations.name,
+      })
+      .from(staff)
+      .leftJoin(
+        staffTranslations,
+        and(eq(staffTranslations.staffId, staff.id), eq(staffTranslations.locale, typedLocale))
+      )
+      .leftJoin(
+        fallbackStaffTranslations,
+        and(eq(fallbackStaffTranslations.staffId, staff.id), eq(fallbackStaffTranslations.locale, fallbackLocale))
+      )
+      .where(
+        and(
+          eq(staff.tenantId, access.tenant.id),
+          or(
+            eq(staff.membershipId, access.membership.id),
+            access.session.user.email ? eq(staff.email, access.session.user.email) : sql`false`
+          )
+        )
+      )
+      // Without an explicit ORDER BY, PostgreSQL can return an email-matched
+      // orphan (membership_id IS NULL) before the record that is actually
+      // linked to this authenticated membership. The CASE expression puts the
+      // membership-ID match first so LIMIT 1 is always deterministic.
+      .orderBy(sql`CASE WHEN ${staff.membershipId} = ${access.membership.id} THEN 0 ELSE 1 END`)
+      .limit(1),
+  ])
+
+  const staffName = userStaff[0]?.name || userStaff[0]?.fallbackName
+  const rawUserName = access.session.user.name
+  const isEmailLike = (val?: string | null) => !val || val.includes('@')
+
+  const userDisplayName =
+    staffName?.trim() ||
+    (!isEmailLike(rawUserName) ? rawUserName?.trim() : undefined) ||
+    (rawUserName?.includes('@') ? rawUserName.split('@')[0] : undefined) ||
+    access.session.user.email?.split('@')[0] ||
+    access.session.user.email ||
+    'User'
+
   const tenantDisplayName = resolveTenantDisplayName(tenantTranslation, access.tenant.slug)
 
   return (
@@ -101,14 +148,26 @@ export default async function DashboardLayout({
               <DashboardSidebarLink key={item.id} item={item} />
             ))}
           </nav>
-          {isAdmin && (
-            <div className="shrink-0 border-t border-border p-5">
-              <a href={`/${typedLocale}/admin`} className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-3 text-sm font-semibold text-amber-700 outline-none transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500">
-                <Settings2 aria-hidden="true" className="h-4 w-4" />
-                {adminLabel}
-              </a>
+          <div className="shrink-0 border-t border-border p-5">
+            <div className="space-y-3">
+              {isAdmin && (
+                <a href={`/${typedLocale}/admin`} className="flex items-center gap-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 outline-none transition hover:bg-amber-100 focus-visible:ring-2 focus-visible:ring-amber-500">
+                  <Settings2 aria-hidden="true" className="h-4 w-4" />
+                  {adminLabel}
+                </a>
+              )}
+              <DashboardUserMenu
+                user={{
+                  name: userDisplayName,
+                  email: access.session.user.email,
+                  image: access.session.user.image,
+                }}
+                role={access.membership.role}
+                locale={typedLocale}
+                slug={slug}
+              />
             </div>
-          )}
+          </div>
         </aside>
 
         <section className="min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-6">
@@ -122,18 +181,25 @@ export default async function DashboardLayout({
                   items={nav}
                   adminHref={isAdmin ? `/${typedLocale}/admin` : undefined}
                   adminLabel={adminLabel}
+                  user={{
+                    name: userDisplayName,
+                    email: access.session.user.email,
+                    image: access.session.user.image,
+                  }}
+                  role={access.membership.role}
+                  slug={slug}
                 />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink-muted">{access.session.user.name}</p>
+                  <p className="text-sm font-medium text-ink-muted">{userDisplayName}</p>
                   <h1 className="mt-1 break-words text-2xl font-semibold tracking-tight sm:text-3xl">{tenantDisplayName}</h1>
                   <p className="mt-1.5 text-sm text-ink-muted">{t.subtitle}</p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
                 {isAdmin && <a href={`/${typedLocale}/admin`} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 outline-none transition hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500">{rtl ? 'الإدارة' : 'Admin'}</a>}
-                <span className="rounded-full bg-[#eaf8f1] px-3 py-1.5 text-xs font-semibold text-[#24865b]">{access.membership.role}</span>
-                <LocaleSwitcher currentLocale={typedLocale} />
-                <SignOutButton label={rtl ? 'تسجيل الخروج' : 'Sign out'} locale={typedLocale} />
+                <div className="sr-only" aria-hidden="true">
+                  <LocaleSwitcher currentLocale={typedLocale} />
+                </div>
               </div>
             </header>
 
@@ -150,3 +216,4 @@ export default async function DashboardLayout({
     </main>
   )
 }
+

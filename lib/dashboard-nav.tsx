@@ -1,5 +1,6 @@
-import { CalendarCheck, CalendarDays, Layers, LayoutDashboard, Settings2, Store, Users } from 'lucide-react'
+import { CalendarCheck, Clock, Layers, LayoutDashboard, Settings2, Store, Users } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
+import type { MemberRole } from '@/lib/authz'
 
 /**
  * The dashboard's navigation and copy — ONE source of truth.
@@ -22,6 +23,8 @@ export const dashboardCopy = {
     bookings: 'الحجوزات',
     customers: 'العملاء',
     services: 'الخدمات',
+    team: 'الفريق',
+    schedule: 'ساعات العمل',
     settings: 'الإعدادات',
     empty: 'لا توجد مواعيد اليوم بعد.',
     emptyBookings: 'لا توجد حجوزات مسجلة بعد.',
@@ -33,6 +36,8 @@ export const dashboardCopy = {
     bookings: 'Bookings',
     customers: 'Customers',
     services: 'Services',
+    team: 'Team',
+    schedule: 'Working Hours',
     settings: 'Settings',
     empty: 'No appointments scheduled today.',
     emptyBookings: 'No bookings recorded yet.',
@@ -45,15 +50,31 @@ export type DashboardNavItem = {
   icon: React.ReactNode
 }
 
-export function buildDashboardNav(locale: Locale): DashboardNavItem[] {
+/**
+ * Items hidden per role (per the RBAC plan):
+ *  - receptionist : team, website, settings
+ *  - staff        : customers, team, website, settings
+ *  - all others   : full nav (8 items)
+ */
+const HIDDEN_NAV_ITEMS: Partial<Record<MemberRole, Set<string>>> = {
+  receptionist: new Set(['team', 'website', 'settings']),
+  staff: new Set(['customers', 'team', 'website', 'settings']),
+}
+
+export function buildDashboardNav(locale: Locale, role?: MemberRole): DashboardNavItem[] {
   const t = dashboardCopy[locale]
-  return [
-    { id: 'overview', icon: <LayoutDashboard aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'نظرة عامة' : 'Overview' },
-    { id: 'bookings', icon: <CalendarCheck aria-hidden="true" className="h-4 w-4" />, label: t.bookings },
-    { id: 'customers', icon: <Users aria-hidden="true" className="h-4 w-4" />, label: t.customers },
-    { id: 'services', icon: <Layers aria-hidden="true" className="h-4 w-4" />, label: t.services },
-    { id: 'team', icon: <CalendarDays aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule' },
-    { id: 'website', icon: <Store aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الموقع' : 'Website' },
-    { id: 'settings', icon: <Settings2 aria-hidden="true" className="h-4 w-4" />, label: t.settings },
+  const hidden = role ? (HIDDEN_NAV_ITEMS[role] ?? new Set<string>()) : new Set<string>()
+
+  const allItems: DashboardNavItem[] = [
+    { id: 'overview',  icon: <LayoutDashboard aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'نظرة عامة' : 'Overview' },
+    { id: 'bookings',  icon: <CalendarCheck   aria-hidden="true" className="h-4 w-4" />, label: t.bookings },
+    { id: 'customers', icon: <Users           aria-hidden="true" className="h-4 w-4" />, label: t.customers },
+    { id: 'services',  icon: <Layers          aria-hidden="true" className="h-4 w-4" />, label: t.services },
+    { id: 'team',      icon: <Users           aria-hidden="true" className="h-4 w-4" />, label: t.team },
+    { id: 'schedule',  icon: <Clock           aria-hidden="true" className="h-4 w-4" />, label: t.schedule },
+    { id: 'website',   icon: <Store           aria-hidden="true" className="h-4 w-4" />, label: locale === 'ar' ? 'الموقع' : 'Website' },
+    { id: 'settings',  icon: <Settings2       aria-hidden="true" className="h-4 w-4" />, label: t.settings },
   ]
+
+  return hidden.size > 0 ? allItems.filter((item) => !hidden.has(item.id)) : allItems
 }

@@ -26,6 +26,7 @@ describe('dashboard bookings tab - nav and copy', () => {
       'customers',
       'services',
       'team',
+      'schedule',
       'website',
       'settings',
     ])

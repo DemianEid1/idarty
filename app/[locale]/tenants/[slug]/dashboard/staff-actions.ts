@@ -206,8 +206,6 @@ export async function createStaff(formData: FormData) {
       }))
     )
 
-    // Decoupled: Zero automatic insertions into staffServices!
-
     // If email is provided, create a secure single-use invitation record
     if (input.email) {
       rawToken = crypto.randomBytes(32).toString('hex')

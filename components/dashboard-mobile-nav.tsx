@@ -19,6 +19,9 @@ import { DrawerNavLink } from '@/components/drawer-nav-link'
 // the left in English (LTR) and from the right in Arabic (RTL).
 // ---------------------------------------------------------------------------
 
+import type { MemberRole } from '@/lib/authz'
+import { DashboardUserMenu } from '@/components/dashboard-user-menu'
+
 export interface DashboardNavItem {
   id: string
   label: string
@@ -30,11 +33,21 @@ export function DashboardMobileNav({
   items,
   adminHref,
   adminLabel,
+  user,
+  role,
+  slug,
 }: {
   locale: 'ar' | 'en'
   items: DashboardNavItem[]
   adminHref?: string
   adminLabel?: string
+  user?: {
+    name: string
+    email: string
+    image?: string | null
+  }
+  role?: MemberRole
+  slug?: string
 }) {
   const rtl = locale === 'ar'
   const [open, setOpen] = useState(false)
@@ -156,6 +169,17 @@ export function DashboardMobileNav({
                 </div>
               )}
             </nav>
+
+            {user && role && slug && (
+              <div className="shrink-0 border-t border-border p-3">
+                <DashboardUserMenu
+                  user={user}
+                  role={role}
+                  locale={locale}
+                  slug={slug}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

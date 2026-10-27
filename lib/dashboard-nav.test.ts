@@ -29,7 +29,7 @@ const publicWebsiteLink = read('../components/public-website-link.tsx')
 const routes = read('../lib/routes.ts')
 
 describe('sidebar navigation order', () => {
-  const expectedOrder = ['overview', 'bookings', 'customers', 'services', 'team', 'website', 'settings']
+  const expectedOrder = ['overview', 'bookings', 'customers', 'services', 'team', 'schedule', 'website', 'settings']
 
   it('declares the nav items in the required order', () => {
     // Isolate the `const nav = [...]` block.
@@ -90,7 +90,7 @@ describe('sidebar navigation order', () => {
     const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
     const block = navModule.slice(start, end)
     const icons = block.match(/aria-hidden="true" className="h-4 w-4"/g) ?? []
-    expect(icons.length).toBe(7)
+    expect(icons.length).toBe(8)
   })
 })
 
@@ -362,10 +362,10 @@ describe('Overview icon', () => {
     expect((b.match(/<LayoutDashboard/g) ?? []).length).toBe(1)
   })
 
-  it('keeps CalendarDays on Team & Schedule', () => {
+  it('keeps Clock on Schedule', () => {
     const b = navBlock()
-    const team = b.slice(b.indexOf("id: 'team'"), b.indexOf("id: 'website'"))
-    expect(team).toContain('<CalendarDays')
+    const sched = b.slice(b.indexOf("id: 'schedule'"), b.indexOf("id: 'website'"))
+    expect(sched).toContain('<Clock')
   })
 
   it('keeps the Overview label, size and accessibility attributes', () => {
@@ -376,29 +376,36 @@ describe('Overview icon', () => {
   })
 })
 
-describe('Team & Schedule icon', () => {
+describe('Team & Schedule navigation', () => {
   const navBlock = () => {
     const start = navModule.indexOf('export function buildDashboardNav')
     const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
     return navModule.slice(start, end)
   }
 
-  it('maps CalendarDays to Team & Schedule only', () => {
-    const team = navBlock().slice(navBlock().indexOf("id: 'team'"), navBlock().indexOf("id: 'website'"))
-    expect(team).toContain('<CalendarDays')
-    expect(team).not.toContain('<Users')
+  it('maps Users to Team', () => {
+    const team = navBlock().slice(navBlock().indexOf("id: 'team'"), navBlock().indexOf("id: 'schedule'"))
+    expect(team).toContain('<Users')
+  })
+
+  it('maps Clock to Schedule', () => {
+    const schedule = navBlock().slice(navBlock().indexOf("id: 'schedule'"), navBlock().indexOf("id: 'website'"))
+    expect(schedule).toContain('<Clock')
   })
 
   it('leaves the Customers icon as Users', () => {
     const customers = navBlock().slice(navBlock().indexOf("id: 'customers'"), navBlock().indexOf("id: 'services'"))
     expect(customers).toContain('<Users')
-    expect(customers).not.toContain('<CalendarDays')
   })
 
-  it('keeps the icon size, aria-hidden and label unchanged', () => {
-    const team = navBlock().slice(navBlock().indexOf("id: 'team'"), navBlock().indexOf("id: 'website'"))
+  it('keeps the icon size, aria-hidden and labels', () => {
+    const team = navBlock().slice(navBlock().indexOf("id: 'team'"), navBlock().indexOf("id: 'schedule'"))
     expect(team).toContain('aria-hidden="true" className="h-4 w-4"')
-    expect(team).toContain("label: locale === 'ar' ? 'الفريق والجدول' : 'Team & Schedule'")
+    expect(team).toContain("label: t.team")
+
+    const schedule = navBlock().slice(navBlock().indexOf("id: 'schedule'"), navBlock().indexOf("id: 'website'"))
+    expect(schedule).toContain('aria-hidden="true" className="h-4 w-4"')
+    expect(schedule).toContain("label: t.schedule")
   })
 })
 
