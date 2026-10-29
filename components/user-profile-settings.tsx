@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import {
   CheckCircle2,
   KeyRound,
@@ -52,6 +52,26 @@ export function UserProfileSettings({
   const [activeSub, setActiveSub] = useState<'general' | 'security'>(
     initialSubTab === 'security' ? 'security' : 'general'
   )
+
+  useEffect(() => {
+    setActiveSub(initialSubTab === 'security' ? 'security' : 'general')
+  }, [initialSubTab])
+
+  function handleTabChange(nextSub: 'general' | 'security') {
+    setActiveSub(nextSub)
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      if (nextSub === 'security') {
+        url.searchParams.set('sec', 'security')
+      } else {
+        url.searchParams.delete('sec')
+      }
+      if (url.searchParams.get('sub') === 'security') {
+        url.searchParams.set('sub', 'profile')
+      }
+      window.history.replaceState(null, '', url.toString())
+    }
+  }
 
   // Profile Form state
   const [profilePending, startProfileTransition] = useTransition()
@@ -173,7 +193,7 @@ export function UserProfileSettings({
           <div className="flex items-center self-start rounded-2xl border border-border bg-surface p-1 shadow-xs sm:self-auto">
             <button
               type="button"
-              onClick={() => setActiveSub('general')}
+              onClick={() => handleTabChange('general')}
               className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
                 activeSub === 'general'
                   ? 'bg-paper text-brand-teal shadow-xs'
@@ -185,7 +205,7 @@ export function UserProfileSettings({
             </button>
             <button
               type="button"
-              onClick={() => setActiveSub('security')}
+              onClick={() => handleTabChange('security')}
               className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
                 activeSub === 'security'
                   ? 'bg-paper text-brand-teal shadow-xs'

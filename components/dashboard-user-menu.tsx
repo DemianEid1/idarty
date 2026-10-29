@@ -157,7 +157,7 @@ export function DashboardUserMenu({
 
             {/* Security & Password */}
             <a
-              href={`/${locale}/tenants/${slug}/dashboard?tab=settings&sub=security`}
+              href={`/${locale}/tenants/${slug}/dashboard?tab=settings&sub=profile&sec=security`}
               onClick={() => setIsOpen(false)}
               className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 font-medium text-[#172033] transition hover:bg-surface hover:text-brand-teal"
             >
