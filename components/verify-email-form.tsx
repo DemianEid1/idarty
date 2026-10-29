@@ -11,7 +11,6 @@ import {
   Clock,
   ArrowRight,
   ArrowLeft,
-  Edit2,
   Check,
   RotateCcw,
 } from 'lucide-react'
@@ -27,23 +26,20 @@ export interface VerifyEmailCardProps {
 
 const copy = {
   ar: {
-    kicker: 'مساحة عمل هادئة وآمنة',
     title: 'تحقق من بريدك الإلكتروني',
-    sentTo: 'أرسلنا رابط التحقق إلى:',
-    noEmail: 'أدخل بريدك الإلكتروني لتلقي رابط التحقق:',
-    instruction: 'يرجى مراجعة صندوق الوارد والضغط على الرابط لتأكيد بريدك الإلكتروني ومتابعة الإعداد.',
-    waiting: 'بانتظار تأكيد الرابط...',
+    sentPrefix: 'أرسلنا رابط التحقق إلى',
+    noEmail: 'أضف بريدك الإلكتروني لإرسال رابط التحقق:',
+    sentSuffix: 'افتح الرسالة واضغط على الرابط لمتابعة الإعداد.',
     verifiedSuccess: 'تم تأكيد البريد الإلكتروني بنجاح! جاري توجيهك...',
     resend: 'إعادة إرسال رابط التحقق',
     resending: 'جارٍ إرسال الرابط...',
-    resendCooldown: (seconds: number) => `يمكنك إعادة الإرسال بعد ${seconds} ثانية`,
-    resendSuccess: 'تم إرسال رابط تحقق جديد بنجاح! يرجى مراجعة بريدك.',
+    resendCooldown: (seconds: number) => `إعادة الإرسال بعد ${seconds} ثانية`,
+    resendSuccess: 'تم إرسال رابط جديد. يرجى مراجعة بريدك.',
     resendError: 'تعذر إرسال الرابط. قد تكون تجاوزت الحد المسموح به، يرجى الانتظار قليلاً.',
-    spamHint: 'لم تجد الرسالة؟ تحقق من مجلد الرسائل الترويجية أو غير المرغوب فيها (Spam).',
+    spamHint: 'لم تجدها؟ تحقق من مجلد الرسائل غير المرغوبة.',
     changeEmail: 'تعديل البريد',
     saveEmail: 'حفظ',
     cancelEdit: 'إلغاء',
-    wrongEmail: 'أدخلت بريداً خاطئاً؟',
     createNew: 'إنشاء حساب جديد',
     backToLogin: 'العودة لتسجيل الدخول',
     errors: {
@@ -54,23 +50,20 @@ const copy = {
     },
   },
   en: {
-    kicker: 'A calm, secure workspace',
     title: 'Check your email',
-    sentTo: "We've sent a verification link to:",
+    sentPrefix: 'We sent a verification link to',
     noEmail: 'Enter your email to receive a verification link:',
-    instruction: 'Please check your inbox (and spam or junk folder) and click the link to verify your email address.',
-    waiting: 'Waiting for verification...',
+    sentSuffix: 'Open it to finish setting up your workspace.',
     verifiedSuccess: 'Email verified successfully! Redirecting...',
     resend: 'Resend verification email',
     resending: 'Sending link...',
-    resendCooldown: (seconds: number) => `Resend available in ${seconds}s`,
-    resendSuccess: 'A new verification link has been sent! Please check your inbox.',
+    resendCooldown: (seconds: number) => `Resend in ${seconds}s`,
+    resendSuccess: 'A new link has been sent. Please check your inbox.',
     resendError: 'Unable to resend email. You may have exceeded the rate limit, please wait a moment.',
-    spamHint: "Didn't receive the email? Check your spam folder or try again later.",
+    spamHint: "Didn't get it? Check your spam folder.",
     changeEmail: 'Change email',
     saveEmail: 'Save',
     cancelEdit: 'Cancel',
-    wrongEmail: 'Wrong email address?',
     createNew: 'Create a new account',
     backToLogin: 'Back to Sign in',
     errors: {
@@ -232,193 +225,154 @@ export function VerifyEmailCard({
       </Link>
 
       <div className="rounded-3xl border border-border bg-paper p-8 shadow-[0_8px_30px_rgba(11,11,15,0.04)] sm:p-10">
-        {/* Verification Icon Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-teal/10 text-brand-teal">
-            <Mail className="h-7 w-7" />
-            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-teal opacity-75" />
-              <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-brand-teal" />
-            </span>
-          </div>
-
-          <span className="rounded-full bg-brand-teal/10 px-3 py-1 text-xs font-bold tracking-wide text-brand-teal uppercase">
-            {t.kicker}
-          </span>
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-teal/10 text-brand-teal">
+          <Mail className="h-5 w-5" aria-hidden />
         </div>
 
-        {/* Title */}
-        <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl text-ink">
+        <h1 className="mt-4 text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">
           {t.title}
         </h1>
 
-        {/* Initial Error State Banner (e.g. Expired or Invalid Link) */}
+        <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+          {currentEmail ? (
+            <>
+              {t.sentPrefix}{' '}
+              <span dir="ltr" className="font-semibold text-ink break-all">
+                {currentEmail}
+              </span>
+              . {t.sentSuffix}
+            </>
+          ) : (
+            t.noEmail
+          )}
+        </p>
+
+        {editingEmail ? (
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              type="email"
+              dir="ltr"
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              autoFocus
+              aria-label={t.changeEmail}
+              className="w-full rounded-xl border border-border bg-surface/50 px-4 py-2.5 text-sm outline-none transition-colors focus:border-brand-teal focus:bg-paper focus:ring-4 focus:ring-brand-teal/10"
+              placeholder="name@example.com"
+            />
+            <button
+              type="button"
+              onClick={handleSaveEmail}
+              aria-label={t.saveEmail}
+              className="shrink-0 rounded-xl bg-brand-teal px-3.5 py-2.5 text-white transition hover:bg-brand-teal/90"
+            >
+              <Check className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEmailInput(currentEmail)
+                setEditingEmail(false)
+              }}
+              className="shrink-0 rounded-xl px-2 py-2.5 text-xs font-semibold text-ink-muted transition hover:text-ink"
+            >
+              {t.cancelEdit}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setEmailInput(currentEmail)
+              setEditingEmail(true)
+            }}
+            className="mt-1 text-xs font-bold text-brand-teal underline-offset-4 hover:underline"
+          >
+            {t.changeEmail}
+          </button>
+        )}
+
+        {/* Link problem reported by the verification callback */}
         {errorBanner && (
           <div
             role="alert"
-            className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+            className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
           >
-            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-            <div className="leading-relaxed font-medium">{errorBanner}</div>
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+            <span className="leading-relaxed font-medium">{errorBanner}</span>
           </div>
         )}
 
-        {/* Verified Success State (auto-polling caught verification) */}
+        {/* Verified in another tab/device */}
         {isVerified && (
           <div
             role="status"
-            className="mt-6 flex items-center gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900 animate-in fade-in zoom-in-95 duration-200"
+            className="mt-5 flex items-center gap-2.5 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900"
           >
-            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
             <span>{t.verifiedSuccess}</span>
           </div>
         )}
 
-        {/* Email Display / Edit Field */}
-        <div className="mt-6">
-          <p className="text-sm font-semibold text-ink-muted">
-            {currentEmail ? t.sentTo : t.noEmail}
-          </p>
-
-          {editingEmail ? (
-            <div className="mt-2.5 flex items-center gap-2">
-              <input
-                type="email"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                autoFocus
-                className="w-full rounded-2xl border border-border bg-surface/50 px-4 py-3 text-sm outline-none transition-colors focus:border-brand-teal focus:bg-paper focus:ring-4 focus:ring-brand-teal/10"
-                placeholder="name@example.com"
-              />
-              <button
-                type="button"
-                onClick={handleSaveEmail}
-                className="shrink-0 rounded-2xl bg-brand-teal px-4 py-3 text-sm font-bold text-white transition hover:bg-brand-teal/90"
-              >
-                <Check className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmailInput(currentEmail)
-                  setEditingEmail(false)
-                }}
-                className="shrink-0 rounded-2xl border border-border px-3.5 py-3 text-sm font-semibold text-ink-muted transition hover:bg-surface"
-              >
-                {t.cancelEdit}
-              </button>
-            </div>
-          ) : (
-            <div className="mt-2.5 flex items-center justify-between rounded-2xl border border-border bg-surface/60 px-4 py-3 text-sm font-semibold text-ink">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Mail className="h-4 w-4 shrink-0 text-brand-teal" />
-                <span className="truncate">{currentEmail || '—'}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmailInput(currentEmail)
-                  setEditingEmail(true)
-                }}
-                className="ms-2 inline-flex items-center gap-1 text-xs font-bold text-brand-teal hover:underline shrink-0"
-              >
-                <Edit2 className="h-3 w-3" />
-                <span>{t.changeEmail}</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Instruction copy */}
-        <p className="mt-4 text-[14px] leading-relaxed text-ink-muted">
-          {t.instruction}
-        </p>
-
-        {/* Professional radar waiting indicator */}
-        {!isVerified && (
-          <div className="mt-5 flex items-center gap-2.5 rounded-xl bg-surface/70 px-3.5 py-2.5 text-xs font-semibold text-ink-muted">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-teal opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-teal" />
-            </span>
-            <span>{t.waiting}</span>
-          </div>
-        )}
-
-        {/* Resend success alert */}
-        {sentSuccess && (
+        {sentSuccess && !isVerified && (
           <div
             role="status"
-            className="mt-5 flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
+            className="mt-5 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800"
           >
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
             <span>{t.resendSuccess}</span>
           </div>
         )}
 
-        {/* Resend error alert */}
-        {resendError && (
+        {resendError && !isVerified && (
           <div
             role="alert"
-            className="mt-5 flex items-center gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
+            className="mt-5 flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800"
           >
-            <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-600" aria-hidden />
             <span>{resendError}</span>
           </div>
         )}
 
-        {/* Resend Button Action with Cooldown */}
-        <div className="mt-6 space-y-3">
-          <button
-            type="button"
-            onClick={handleResend}
-            disabled={pending || cooldown > 0 || !currentEmail}
-            className="w-full rounded-2xl bg-brand-teal px-5 py-3.5 text-base font-bold text-white shadow-sm transition hover:bg-brand-teal/90 disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {pending ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span>{t.resending}</span>
-              </>
-            ) : cooldown > 0 ? (
-              <>
-                <Clock className="h-5 w-5" />
-                <span>{t.resendCooldown(cooldown)}</span>
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-5 w-5" />
-                <span>{t.resend}</span>
-              </>
-            )}
-          </button>
-
-          <p className="text-center text-xs text-ink-muted leading-relaxed">
-            {t.spamHint}
-          </p>
-        </div>
-
-        {/* Divider */}
-        <div className="my-6 border-t border-border" />
-
-        {/* Secondary Navigation Options */}
-        <div className="flex flex-col gap-3 text-center sm:flex-row sm:items-center sm:justify-between text-sm">
-          <div className="text-ink-muted">
-            <span>{t.wrongEmail} </span>
-            <Link
-              href={`/${locale}/signup`}
-              className="font-bold text-brand-teal hover:underline"
+        {!isVerified && (
+          <>
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={pending || cooldown > 0 || !currentEmail}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-teal px-5 py-3 text-sm font-bold text-white transition hover:bg-brand-teal/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {t.createNew}
-            </Link>
-          </div>
+              {pending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  <span>{t.resending}</span>
+                </>
+              ) : cooldown > 0 ? (
+                <span>{t.resendCooldown(cooldown)}</span>
+              ) : (
+                <>
+                  <RotateCcw className="h-4 w-4" aria-hidden />
+                  <span>{t.resend}</span>
+                </>
+              )}
+            </button>
 
+            <p className="mt-3 text-center text-xs text-ink-muted">{t.spamHint}</p>
+          </>
+        )}
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm">
           <Link
             href={`/${locale}/login`}
-            className="inline-flex items-center justify-center gap-1.5 font-bold text-ink-muted transition-colors hover:text-ink"
+            className="inline-flex items-center gap-1.5 font-semibold text-ink-muted transition-colors hover:text-ink"
           >
+            <ArrowIcon className="h-4 w-4" aria-hidden />
             <span>{t.backToLogin}</span>
-            <ArrowIcon className="h-4 w-4" />
+          </Link>
+          <span className="text-ink-muted/40" aria-hidden>
+            ·
+          </span>
+          <Link href={`/${locale}/signup`} className="font-semibold text-brand-teal hover:underline">
+            {t.createNew}
           </Link>
         </div>
       </div>
