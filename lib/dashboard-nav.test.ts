@@ -29,7 +29,7 @@ const publicWebsiteLink = read('../components/public-website-link.tsx')
 const routes = read('../lib/routes.ts')
 
 describe('sidebar navigation order', () => {
-  const expectedOrder = ['overview', 'bookings', 'customers', 'services', 'team', 'schedule', 'website', 'settings']
+  const expectedOrder = ['overview', 'bookings', 'customers', 'services', 'branches', 'team', 'schedule', 'website', 'settings']
 
   it('declares the nav items in the required order', () => {
     // Isolate the `const nav = [...]` block.
@@ -51,7 +51,7 @@ describe('sidebar navigation order', () => {
   it('keeps every nav destination as a ?tab= query link', () => {
     for (const id of expectedOrder) {
       // The href is built by the sidebar link component.
-      expect(sidebarLink).toContain('href={`?tab=${item.id}`}')
+      expect(sidebarLink).toContain('?tab=${item.id}')
     }
   })
 
@@ -90,7 +90,7 @@ describe('sidebar navigation order', () => {
     const end = navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
     const block = navModule.slice(start, end)
     const icons = block.match(/aria-hidden="true" className="h-4 w-4"/g) ?? []
-    expect(icons.length).toBe(8)
+    expect(icons.length).toBe(9)
   })
 })
 
@@ -383,9 +383,9 @@ describe('Team & Schedule navigation', () => {
     return navModule.slice(start, end)
   }
 
-  it('maps Users to Team', () => {
+  it('maps ContactRound to Team', () => {
     const team = navBlock().slice(navBlock().indexOf("id: 'team'"), navBlock().indexOf("id: 'schedule'"))
-    expect(team).toContain('<Users')
+    expect(team).toContain('<ContactRound')
   })
 
   it('maps Clock to Schedule', () => {

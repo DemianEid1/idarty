@@ -38,6 +38,11 @@ import type { DashboardNavItem } from '@/lib/dashboard-nav'
  * commits.
  *
  * `onNavigate` closes the drawer.
+ *
+ * BRANCH PRESERVATION
+ * -------------------
+ * The `?branch=` param is carried forward on every tab navigation so the
+ * selected branch never resets when the user switches drawer items.
  */
 export function DrawerNavLink({
   item,
@@ -51,11 +56,13 @@ export function DrawerNavLink({
   const [pending, setPending] = useState(false)
   const navigating = useIsNavigating()
 
+  const branch = searchParams.get('branch')
   const isActive = pending || (!navigating && urlTab === item.id)
+  const href = `?tab=${item.id}${branch ? `&branch=${branch}` : ''}`
 
   return (
     <Link
-      href={`?tab=${item.id}`}
+      href={href}
       onClick={() => {
         // Publish before the drawer unmounts this link.
         reportPending(item.id, true)

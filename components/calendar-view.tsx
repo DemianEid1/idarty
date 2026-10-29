@@ -3,6 +3,7 @@
 import { useState, useTransition, useId } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import {
+  Building2,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -52,6 +53,8 @@ export interface CalendarBooking {
   totalPrice: number
   createdByUserId?: string | null
   createdByName?: string | null
+  branchId?: string | null
+  branchName?: string | null
 }
 
 export interface CalendarViewProps {
@@ -307,6 +310,12 @@ export function CalendarView({
                         <p className="mt-1.5 truncate text-xs font-semibold text-[#172033] group-hover:text-brand-teal transition">
                           {b.customerName}
                         </p>
+                        {b.branchName && (
+                          <div className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-brand-teal truncate">
+                            <Building2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                            <span className="truncate">{b.branchName}</span>
+                          </div>
+                        )}
 
                         {/* Multi-service summary */}
                         <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-ink-muted">
@@ -415,6 +424,15 @@ export function CalendarView({
                       {selectedBooking.customerName}
                     </span>
                   </div>
+                  {selectedBooking.branchName && (
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-3.5 w-3.5 shrink-0 text-brand-teal" />
+                      <span className="text-xs text-[#374151]">
+                        <span className="font-semibold text-ink-muted">{rtl ? 'الفرع: ' : 'Branch: '}</span>
+                        <span className="font-medium text-[#172033]">{selectedBooking.branchName}</span>
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <Phone className="h-3.5 w-3.5 shrink-0 text-brand-teal" />
                     <a

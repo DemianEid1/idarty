@@ -1,7 +1,7 @@
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { aliasedTable, and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, not } from 'drizzle-orm'
-import { Activity, CalendarDays, CheckCircle2, ClipboardList, Pencil, Plus, Settings2, ShieldCheck, Users } from 'lucide-react'
+import { aliasedTable, and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, not, or, sql } from 'drizzle-orm'
+import { Activity, Building2, CalendarDays, CheckCircle2, ClipboardList, Pencil, Plus, Settings2, ShieldCheck, Users } from 'lucide-react'
 import { requireTenantAccess } from '@/lib/authz'
 import { dashboardCopy } from '@/lib/dashboard-nav'
 import { db } from '@/lib/db'
@@ -45,6 +45,9 @@ import {
   getWeekRange,
   parseStartDate,
 } from '@/lib/calendar-helpers'
+import { CustomersTab } from '@/components/customers-tab'
+import { BranchesTab } from '@/components/branches-tab'
+import { branches, branchTranslations, staffBranches } from '@/lib/db/schema'
 
 
 export default async function TenantDashboard(props: {
@@ -58,6 +61,10 @@ export default async function TenantDashboard(props: {
     sub?: string
     actor?: string
     staffId?: string
+    q?: string
+    filter?: string
+    sort?: string
+    branch?: string
   }>
 }) {
   const { locale, slug } = await props.params
@@ -72,6 +79,15 @@ export default async function TenantDashboard(props: {
   const pageSize = 12
   const rtl = locale === 'ar'
   const t = dashboardCopy[locale]
+  // Customers tab params
+  const customerSearch = (searchParams.q ?? '').trim().slice(0, 100)
+  const customerFilter = (searchParams.filter ?? 'all') as 'all' | 'returning' | 'new' | 'has_notes'
+  const customerSort = (searchParams.sort ?? 'newest') as 'newest' | 'bookings' | 'recent_visit' | 'name'
+  const cookieStore = await cookies()
+  const cookieBranch = cookieStore.get(`idarty_branch_${slug}`)?.value
+  const branchParam = searchParams.branch
+  const effectiveBranch = branchParam !== undefined ? branchParam : (cookieBranch && cookieBranch !== 'all' ? cookieBranch : undefined)
+  const selectedBranchId = effectiveBranch && effectiveBranch !== 'all' ? effectiveBranch : undefined
   let access
   try {
     access = await requireTenantAccess(await headers(), slug)
@@ -102,27 +118,27 @@ export default async function TenantDashboard(props: {
 
   const role = access.membership.role
 
+  // Settings route protection: receptionist & staff can ONLY access their own Profile and Account
+  // sections (sub=profile or sub=security). Any attempt to access workspace settings is redirected to profile.
+  if (
+    tab === 'settings' &&
+    (role === 'receptionist' || role === 'staff')
+  ) {
+    if (sub !== 'profile' && sub !== 'security') {
+      redirect(`/${locale}/tenants/${slug}/dashboard?tab=settings&sub=profile`)
+    }
+  }
+
   // Layer 2 — URL / route protection: redirect restricted roles away from tabs
   // they cannot access even if they craft the URL manually.
-  const RESTRICTED_TABS_RECEPTIONIST = new Set(['team', 'website', 'settings'])
-  const RESTRICTED_TABS_STAFF        = new Set(['customers', 'team', 'website', 'settings'])
+  const RESTRICTED_TABS_RECEPTIONIST = new Set(['branches', 'team', 'website'])
+  const RESTRICTED_TABS_STAFF        = new Set(['customers', 'branches', 'team', 'website'])
 
   if (
     (role === 'receptionist' && RESTRICTED_TABS_RECEPTIONIST.has(tab)) ||
     (role === 'staff'        && RESTRICTED_TABS_STAFF.has(tab))
   ) {
     redirect(`/${locale}/tenants/${slug}/dashboard?tab=overview`)
-  }
-
-  // Allow receptionist / staff to reach their own profile inside settings.
-  // ?tab=settings&sub=profile or ?tab=settings&sub=security are the only
-  // permitted sub-paths — everything else redirects above.
-  if (
-    tab === 'settings' &&
-    (role === 'receptionist' || role === 'staff') &&
-    sub !== 'profile' && sub !== 'security'
-  ) {
-    redirect(`/${locale}/tenants/${slug}/dashboard?tab=settings&sub=profile`)
   }
 
   const startOfDay = new Date()
@@ -140,15 +156,85 @@ export default async function TenantDashboard(props: {
   const fallbackLocale = locale === 'ar' ? 'en' : 'ar'
   const fallbackServiceTranslations = aliasedTable(serviceTranslations, 'fallback_dash_service_translations')
   const fallbackStaffTranslations = aliasedTable(staffTranslations, 'fallback_dash_staff_translations')
+  const fallbackBranchTranslations = aliasedTable(branchTranslations, 'fallback_dash_branch_trans')
+  const overviewBranchTrans = aliasedTable(branchTranslations, 'overview_branch_trans')
+  const overviewFbBranchTrans = aliasedTable(branchTranslations, 'overview_fb_branch_trans')
 
-  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, overrideRows, tenantTranslation, serviceBookingCounts, pendingInviteRows] = await Promise.all([
-    db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')))),
+  // Aggregated booking stats per customer (for sorting and returning filter)
+  const bookingAgg = db
+    .select({
+      customerId: bookings.customerId,
+      bookingCount: count().as('booking_count'),
+      lastBookingAt: sql<Date>`max(${bookings.startsAt})`.as('last_booking_at'),
+    })
+    .from(bookings)
+    .where(eq(bookings.tenantId, access.tenant.id))
+    .groupBy(bookings.customerId)
+    .as('booking_agg')
+
+  // Customer tab search and filter conditions
+  const customerBranchCondition =
+    tab === 'customers' && selectedBranchId
+      ? sql`EXISTS (
+          SELECT 1 FROM ${bookings} 
+          WHERE ${bookings.customerId} = ${customers.id} 
+            AND ${bookings.tenantId} = ${access.tenant.id} 
+            AND ${bookings.branchId} = ${selectedBranchId}
+            AND ${bookings.deletedAt} IS NULL
+        )`
+      : undefined
+  const branchBookingCondition = selectedBranchId ? eq(bookings.branchId, selectedBranchId) : undefined
+
+  const customerSearchCondition =
+    tab === 'customers' && customerSearch.length > 0
+      ? or(
+          ilike(customers.nameNormalized, `%${customerSearch.toLowerCase()}%`),
+          ilike(customers.phoneE164, `%${customerSearch.toLowerCase()}%`),
+          ilike(customers.email, `%${customerSearch.toLowerCase()}%`)
+        )
+      : undefined
+
+  const customerFilterCondition =
+    tab === 'customers'
+      ? customerFilter === 'returning'
+        ? sql`coalesce(${bookingAgg.bookingCount}, 0) > 1`
+        : customerFilter === 'new'
+        ? and(gte(customers.createdAt, startOfMonth), lt(customers.createdAt, startOfNextMonth))
+        : customerFilter === 'has_notes'
+        ? and(isNotNull(customers.notes), sql`length(trim(${customers.notes})) > 0`)
+        : undefined
+      : undefined
+
+  const customerOrderBy =
+    customerSort === 'bookings'
+      ? desc(sql`coalesce(${bookingAgg.bookingCount}, 0)`)
+      : customerSort === 'recent_visit'
+      ? desc(sql`coalesce(${bookingAgg.lastBookingAt}, '1970-01-01'::timestamptz)`)
+      : customerSort === 'name'
+      ? asc(customers.nameNormalized)
+      : desc(customers.createdAt)
+
+  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, overrideRows, tenantTranslation, serviceBookingCounts, pendingInviteRows, customerNewThisMonth, customerReturningCount, customerBookingStats, customerWithNotesCount, customerFilteredTotalCount, activeBranchRows] = await Promise.all([
+    db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')), ...(branchBookingCondition ? [branchBookingCondition] : []))),
     db.select({ value: count() }).from(customers).where(eq(customers.tenantId, access.tenant.id)),
     db.select({ value: count() }).from(services).where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true))),
-    db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'completed'), gte(bookings.startsAt, startOfMonth), lt(bookings.startsAt, startOfNextMonth))),
-    db.select({ id: customers.id, name: customers.fullName, phone: customers.phoneE164, email: customers.email, createdAt: customers.createdAt }).from(customers).where(and(eq(customers.tenantId, access.tenant.id), isNull(customers.deletedAt))).orderBy(desc(customers.createdAt)).limit(pageSize).offset((page - 1) * pageSize),
-    db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')))).orderBy(bookings.startsAt),
-    db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, endOfDay), lt(bookings.startsAt, endOfWeek), not(eq(bookings.status, 'cancelled')))).orderBy(bookings.startsAt).limit(10),
+    db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'completed'), gte(bookings.startsAt, startOfMonth), lt(bookings.startsAt, startOfNextMonth), ...(branchBookingCondition ? [branchBookingCondition] : []))),
+    db.select({ id: customers.id, name: customers.fullName, phone: customers.phoneE164, email: customers.email, createdAt: customers.createdAt, notes: customers.notes, preferredLocale: customers.preferredLocale })
+      .from(customers)
+      .leftJoin(bookingAgg, eq(bookingAgg.customerId, customers.id))
+      .where(and(
+        eq(customers.tenantId, access.tenant.id),
+        isNull(customers.deletedAt),
+        ...(customerSearchCondition ? [customerSearchCondition] : []),
+        ...(customerFilterCondition ? [customerFilterCondition] : []),
+        ...(customerBranchCondition ? [customerBranchCondition] : [])
+      ))
+      .orderBy(customerOrderBy)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    // --- filtered customer count (for pagination when search is active) ---
+    db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName, branchId: bookings.branchId, branchName: overviewBranchTrans.name, fallbackBranchName: overviewFbBranchTrans.name }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).leftJoin(overviewBranchTrans, and(eq(overviewBranchTrans.branchId, bookings.branchId), eq(overviewBranchTrans.locale, locale))).leftJoin(overviewFbBranchTrans, and(eq(overviewFbBranchTrans.branchId, bookings.branchId), eq(overviewFbBranchTrans.locale, fallbackLocale))).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')), ...(branchBookingCondition ? [branchBookingCondition] : []))).orderBy(bookings.startsAt),
+    db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName, branchId: bookings.branchId, branchName: overviewBranchTrans.name, fallbackBranchName: overviewFbBranchTrans.name }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).leftJoin(overviewBranchTrans, and(eq(overviewBranchTrans.branchId, bookings.branchId), eq(overviewBranchTrans.locale, locale))).leftJoin(overviewFbBranchTrans, and(eq(overviewFbBranchTrans.branchId, bookings.branchId), eq(overviewFbBranchTrans.locale, fallbackLocale))).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, endOfDay), lt(bookings.startsAt, endOfWeek), not(eq(bookings.status, 'cancelled')), ...(branchBookingCondition ? [branchBookingCondition] : []))).orderBy(bookings.startsAt).limit(10),
     db.select({
       id: services.id,
       durationMin: services.durationMin,
@@ -168,7 +254,7 @@ export default async function TenantDashboard(props: {
       .leftJoin(fallbackServiceTranslations, and(eq(fallbackServiceTranslations.serviceId, services.id), eq(fallbackServiceTranslations.locale, fallbackLocale)))
       .where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true)))
       .orderBy(services.sortOrder),
-    db.select({ weekday: workingHours.weekday, startTime: workingHours.startTime, endTime: workingHours.endTime }).from(workingHours).where(and(eq(workingHours.tenantId, access.tenant.id), isNull(workingHours.staffId))),
+    db.select({ weekday: workingHours.weekday, startTime: workingHours.startTime, endTime: workingHours.endTime, branchId: workingHours.branchId }).from(workingHours).where(and(eq(workingHours.tenantId, access.tenant.id), isNull(workingHours.staffId))),
     db.select({
       id: staff.id,
       name: staffTranslations.name,
@@ -187,18 +273,105 @@ export default async function TenantDashboard(props: {
       .leftJoin(user, eq(user.id, memberships.userId))
       .where(and(eq(staff.tenantId, access.tenant.id), eq(staff.isActive, true), isNull(staff.deletedAt)))
       .orderBy(staff.sortOrder),
-    db.select({ id: dateOverrides.id, startDate: dateOverrides.startDate, endDate: dateOverrides.endDate, kind: dateOverrides.kind, label: dateOverrides.label, startTime: dateOverrides.startTime, endTime: dateOverrides.endTime }).from(dateOverrides).where(and(eq(dateOverrides.tenantId, access.tenant.id), isNull(dateOverrides.staffId))).orderBy(dateOverrides.startDate),
+    db.select({ id: dateOverrides.id, branchId: dateOverrides.branchId, startDate: dateOverrides.startDate, endDate: dateOverrides.endDate, kind: dateOverrides.kind, label: dateOverrides.label, startTime: dateOverrides.startTime, endTime: dateOverrides.endTime }).from(dateOverrides).where(and(eq(dateOverrides.tenantId, access.tenant.id), isNull(dateOverrides.staffId))).orderBy(dateOverrides.startDate),
     db.query.tenantTranslations.findFirst({ where: and(eq(tenantTranslations.tenantId, access.tenant.id), eq(tenantTranslations.locale, locale)) }),
     // Booking counts per service, so the delete confirmation can state the real
     // consequence before the tenant commits. Derived from data the page already
     // has access to — one grouped query, no per-row round trip.
     db.select({ serviceId: bookingItems.serviceId, value: count() }).from(bookingItems).where(eq(bookingItems.tenantId, access.tenant.id)).groupBy(bookingItems.serviceId),
     db.select({ staffId: tenantInvitations.staffId }).from(tenantInvitations).where(and(eq(tenantInvitations.tenantId, access.tenant.id), isNull(tenantInvitations.acceptedAt))),
+    // New customers registered this calendar month
+    db.select({ value: count() }).from(customers).where(and(eq(customers.tenantId, access.tenant.id), gte(customers.createdAt, startOfMonth), lt(customers.createdAt, startOfNextMonth), isNull(customers.deletedAt))),
+    // Returning customers = those with >1 booking (each unique customerId in bookings table counted)
+    db.select({ value: count() })
+      .from(
+        db.select({ customerId: bookings.customerId })
+          .from(bookings)
+          .where(eq(bookings.tenantId, access.tenant.id))
+          .groupBy(bookings.customerId)
+          .having(sql`count(*) > 1`)
+          .as('returning_sub')
+      ),
+    // Per-customer booking count + last booking date, for the rows we just fetched
+    // This runs in parallel and is a single grouped query — no N+1.
+    db.select({
+      customerId: bookings.customerId,
+      bookingCount: count(),
+      lastBookingAt: sql<Date>`max(${bookings.startsAt})`,
+    })
+      .from(bookings)
+      .where(eq(bookings.tenantId, access.tenant.id))
+      .groupBy(bookings.customerId),
+    // Customers with notes count
+    db.select({ value: count() }).from(customers).where(and(
+      eq(customers.tenantId, access.tenant.id),
+      isNull(customers.deletedAt),
+      isNotNull(customers.notes),
+      sql`length(trim(${customers.notes})) > 0`
+    )),
+    // Filtered customer total for pagination
+    db.select({ value: count() })
+      .from(customers)
+      .leftJoin(bookingAgg, eq(bookingAgg.customerId, customers.id))
+      .where(and(
+        eq(customers.tenantId, access.tenant.id),
+        isNull(customers.deletedAt),
+        ...(customerSearchCondition ? [customerSearchCondition] : []),
+        ...(customerFilterCondition ? [customerFilterCondition] : []),
+        ...(customerBranchCondition ? [customerBranchCondition] : [])
+      )),
+    db
+      .select({
+        id: branches.id,
+        name: branchTranslations.name,
+        fallbackName: fallbackBranchTranslations.name,
+        isDefault: branches.isDefault,
+      })
+      .from(branches)
+      .leftJoin(
+        branchTranslations,
+        and(eq(branchTranslations.branchId, branches.id), eq(branchTranslations.locale, locale))
+      )
+      .leftJoin(
+        fallbackBranchTranslations,
+        and(eq(fallbackBranchTranslations.branchId, branches.id), eq(fallbackBranchTranslations.locale, fallbackLocale))
+      )
+      .where(and(eq(branches.tenantId, access.tenant.id), eq(branches.isActive, true), isNull(branches.archivedAt)))
+      .orderBy(desc(branches.isDefault), asc(branches.sortOrder), asc(branches.createdAt)),
   ])
+
+  const branchHours = selectedBranchId ? hoursRows.filter((h) => h.branchId === selectedBranchId) : []
+  const effectiveHours = (selectedBranchId && branchHours.length > 0)
+    ? branchHours
+    : hoursRows.filter((h) => !h.branchId)
+
+  const effectiveOverrides = selectedBranchId
+    ? overrideRows.filter((o) => o.branchId === selectedBranchId)
+    : overrideRows.filter((o) => !o.branchId)
+
+  const branchOptions = activeBranchRows.map((b) => ({
+    id: b.id,
+    name: b.name || b.fallbackName || (rtl ? 'فرع' : 'Branch'),
+    isDefault: b.isDefault,
+  }))
 
   const pendingInviteStaffIds = new Set(pendingInviteRows.map((r) => r.staffId))
 
   const bookingsByService = new Map(serviceBookingCounts.map((r) => [r.serviceId, r.value]))
+
+  // Per-customer booking stats map for fast O(1) row lookups
+  const customerBookingMap = new Map(
+    customerBookingStats.map((r) => [r.customerId, { bookingCount: r.bookingCount, lastBookingAt: r.lastBookingAt }])
+  )
+
+  const customerSearchTotal =
+    customerSearch.length > 0 || customerFilter !== 'all' || Boolean(selectedBranchId)
+      ? (customerFilteredTotalCount[0]?.value ?? 0)
+      : (customerCount[0]?.value ?? 0)
+
+  const newThisMonth = customerNewThisMonth[0]?.value ?? 0
+  const returningCount = customerReturningCount[0]?.value ?? 0
+  const notesCount = customerWithNotesCount[0]?.value ?? 0
 
   let bookingListRows: Array<{
     id: string
@@ -215,6 +388,9 @@ export default async function TenantDashboard(props: {
     customerEmail: string | null
     createdByUserId?: string | null
     createdByName?: string | null
+    branchId?: string | null
+    branchName?: string | null
+    branchAddress?: string | null
   }> = []
   let totalBookingsCount = 0
   const itemsByBooking = new Map<
@@ -345,6 +521,82 @@ export default async function TenantDashboard(props: {
     }
   }
 
+  let branchListRows: Array<{
+    id: string
+    slug: string
+    name: string
+    fallbackName?: string | null
+    address?: string | null
+    description?: string | null
+    phone?: string | null
+    email?: string | null
+    bookingCapacity: number
+    isDefault: boolean
+    isActive: boolean
+    staffCount: number
+    todayBookingsCount: number
+  }> = []
+
+  if (tab === 'branches') {
+    // fallbackBranchTranslations declared at page level
+    const rawBranches = await db
+      .select({
+        id: branches.id,
+        slug: branches.slug,
+        name: branchTranslations.name,
+        fallbackName: fallbackBranchTranslations.name,
+        address: branchTranslations.address,
+        description: branchTranslations.description,
+        phone: branches.phoneE164,
+        email: branches.email,
+        bookingCapacity: branches.bookingCapacity,
+        isDefault: branches.isDefault,
+        isActive: branches.isActive,
+      })
+      .from(branches)
+      .leftJoin(
+        branchTranslations,
+        and(eq(branchTranslations.branchId, branches.id), eq(branchTranslations.locale, locale))
+      )
+      .leftJoin(
+        fallbackBranchTranslations,
+        and(eq(fallbackBranchTranslations.branchId, branches.id), eq(fallbackBranchTranslations.locale, fallbackLocale))
+      )
+      .where(and(eq(branches.tenantId, access.tenant.id), isNull(branches.archivedAt)))
+      .orderBy(desc(branches.isDefault), asc(branches.sortOrder), asc(branches.createdAt))
+
+    const [staffPerBranch, todayPerBranch] = await Promise.all([
+      db
+        .select({ branchId: staffBranches.branchId, count: count() })
+        .from(staffBranches)
+        .where(eq(staffBranches.tenantId, access.tenant.id))
+        .groupBy(staffBranches.branchId),
+      db
+        .select({ branchId: bookings.branchId, count: count() })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.tenantId, access.tenant.id),
+            gte(bookings.startsAt, startOfDay),
+            lt(bookings.startsAt, endOfDay),
+            not(eq(bookings.status, 'cancelled')),
+            isNotNull(bookings.branchId)
+          )
+        )
+        .groupBy(bookings.branchId),
+    ])
+
+    const staffCountMap = new Map(staffPerBranch.map((s) => [s.branchId, s.count]))
+    const todayCountMap = new Map(todayPerBranch.map((t) => [t.branchId, t.count]))
+
+    branchListRows = rawBranches.map((b) => ({
+      ...b,
+      name: b.name || b.fallbackName || (locale === 'ar' ? 'فرع بدون اسم' : 'Unnamed Branch'),
+      staffCount: staffCountMap.get(b.id) ?? 0,
+      todayBookingsCount: todayCountMap.get(b.id) ?? 0,
+    }))
+  }
+
   if (tab === 'bookings') {
     if (view === 'calendar') {
       const calStartDate = parseStartDate(searchParams.start)
@@ -358,6 +610,7 @@ export default async function TenantDashboard(props: {
         gte(bookings.startsAt, calWeekRange.start),
         lt(bookings.startsAt, calWeekRange.end),
         isNull(bookings.deletedAt),
+        ...(branchBookingCondition ? [branchBookingCondition] : []),
       ]
 
       if (calStatusParam === 'all') {
@@ -373,6 +626,8 @@ export default async function TenantDashboard(props: {
       const calCreatorStaff = aliasedTable(staff, 'dash_cal_creator_staff')
       const calCreatorStaffTranslations = aliasedTable(staffTranslations, 'dash_cal_creator_staff_trans')
       const calFallbackCreatorStaffTranslations = aliasedTable(staffTranslations, 'dash_cal_fb_creator_staff_trans')
+      const calBranchTrans = aliasedTable(branchTranslations, 'dash_cal_branch_trans')
+      const calFallbackBranchTrans = aliasedTable(branchTranslations, 'dash_cal_fb_branch_trans')
 
       const calBookingRows = await db
         .select({
@@ -393,6 +648,9 @@ export default async function TenantDashboard(props: {
           customerName: customers.fullName,
           customerPhone: customers.phoneE164,
           customerEmail: customers.email,
+          branchId: bookings.branchId,
+          branchName: calBranchTrans.name,
+          fallbackBranchName: calFallbackBranchTrans.name,
         })
         .from(bookings)
         .innerJoin(customers, eq(customers.id, bookings.customerId))
@@ -423,6 +681,20 @@ export default async function TenantDashboard(props: {
           and(
             eq(calFallbackCreatorStaffTranslations.staffId, calCreatorStaff.id),
             eq(calFallbackCreatorStaffTranslations.locale, fallbackLocale)
+          )
+        )
+        .leftJoin(
+          calBranchTrans,
+          and(
+            eq(calBranchTrans.branchId, bookings.branchId),
+            eq(calBranchTrans.locale, locale)
+          )
+        )
+        .leftJoin(
+          calFallbackBranchTrans,
+          and(
+            eq(calFallbackBranchTrans.branchId, bookings.branchId),
+            eq(calFallbackBranchTrans.locale, fallbackLocale)
           )
         )
         .where(and(...calBookingConditions))
@@ -513,6 +785,8 @@ export default async function TenantDashboard(props: {
           totalPrice,
           createdByUserId: b.createdByUserId,
           createdByName,
+          branchId: b.branchId,
+          branchName: b.branchName || b.fallbackBranchName || null,
         }
       })
 
@@ -534,6 +808,7 @@ export default async function TenantDashboard(props: {
       const bookingConditions = [
         eq(bookings.tenantId, access.tenant.id),
         isNull(bookings.deletedAt),
+        ...(branchBookingCondition ? [branchBookingCondition] : []),
       ]
       if (statusFilter && statusFilter !== 'all') {
         bookingConditions.push(eq(bookings.status, statusFilter as any))
@@ -544,6 +819,8 @@ export default async function TenantDashboard(props: {
       const creatorStaff = aliasedTable(staff, 'dash_b_creator_staff')
       const creatorStaffTranslations = aliasedTable(staffTranslations, 'dash_b_creator_staff_trans')
       const fallbackCreatorStaffTranslations = aliasedTable(staffTranslations, 'dash_b_fb_creator_staff_trans')
+      const listBranchTrans = aliasedTable(branchTranslations, 'dash_b_branch_trans')
+      const listFallbackBranchTrans = aliasedTable(branchTranslations, 'dash_b_fb_branch_trans')
 
       const [countResult, bRows] = await Promise.all([
         db.select({ value: count() }).from(bookings).where(and(...bookingConditions)),
@@ -566,6 +843,11 @@ export default async function TenantDashboard(props: {
             customerName: customers.fullName,
             customerPhone: customers.phoneE164,
             customerEmail: customers.email,
+            branchId: bookings.branchId,
+            branchName: listBranchTrans.name,
+            fallbackBranchName: listFallbackBranchTrans.name,
+            branchAddress: listBranchTrans.address,
+            fallbackBranchAddress: listFallbackBranchTrans.address,
           })
           .from(bookings)
           .innerJoin(customers, eq(customers.id, bookings.customerId))
@@ -598,6 +880,20 @@ export default async function TenantDashboard(props: {
               eq(fallbackCreatorStaffTranslations.locale, fallbackLocale)
             )
           )
+          .leftJoin(
+            listBranchTrans,
+            and(
+              eq(listBranchTrans.branchId, bookings.branchId),
+              eq(listBranchTrans.locale, locale)
+            )
+          )
+          .leftJoin(
+            listFallbackBranchTrans,
+            and(
+              eq(listFallbackBranchTrans.branchId, bookings.branchId),
+              eq(listFallbackBranchTrans.locale, fallbackLocale)
+            )
+          )
           .where(and(...bookingConditions))
           .orderBy(desc(bookings.startsAt))
           .limit(pageSize)
@@ -607,6 +903,8 @@ export default async function TenantDashboard(props: {
       totalBookingsCount = countResult[0]?.value ?? 0
       bookingListRows = bRows.map((r) => ({
         ...r,
+        branchName: r.branchName || r.fallbackBranchName || null,
+        branchAddress: r.branchAddress || r.fallbackBranchAddress || null,
         createdByName:
           r.creatorStaffName ||
           r.fallbackCreatorStaffName ||
@@ -759,8 +1057,8 @@ export default async function TenantDashboard(props: {
             </div>
             )}
 
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{t.appointments}</h2><div className="mt-6 space-y-3">{todayBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-12 text-center text-sm text-ink-muted">{t.empty}</div> : todayBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-4"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'المواعيد القادمة' : 'Upcoming bookings'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'نظرة على الأيام السبعة القادمة.' : 'A view of the next seven days.'}</p></div><span className="shrink-0 rounded-full bg-[#fff5e8] px-3 py-1 text-xs font-semibold text-[#b86a12]">{upcomingBookings.length}</span></div><div className="mt-5 space-y-2">{upcomingBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا توجد مواعيد قادمة.' : 'No upcoming bookings.'}</div> : upcomingBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{booking.name}</p><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{t.appointments}</h2><div className="mt-6 space-y-3">{todayBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-12 text-center text-sm text-ink-muted">{t.empty}</div> : todayBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-4"><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="font-semibold wrap-anywhere">{booking.name}</p>{(booking as any).branchName && <span className="inline-flex items-center gap-1 rounded-full bg-[#f0faf9] border border-brand-teal/20 px-2 py-0.5 text-[11px] font-semibold text-brand-teal"><Building2 className="h-2.5 w-2.5" /><span>{(booking as any).branchName}</span></span>}</div><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{locale === 'ar' ? 'المواعيد القادمة' : 'Upcoming bookings'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'نظرة على الأيام السبعة القادمة.' : 'A view of the next seven days.'}</p></div><span className="shrink-0 rounded-full bg-[#fff5e8] px-3 py-1 text-xs font-semibold text-[#b86a12]">{upcomingBookings.length}</span></div><div className="mt-5 space-y-2">{upcomingBookings.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا توجد مواعيد قادمة.' : 'No upcoming bookings.'}</div> : upcomingBookings.map((booking) => <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="font-semibold wrap-anywhere">{booking.name}</p>{(booking as any).branchName && <span className="inline-flex items-center gap-1 rounded-full bg-[#f0faf9] border border-brand-teal/20 px-2 py-0.5 text-[11px] font-semibold text-brand-teal"><Building2 className="h-2.5 w-2.5" /><span>{(booking as any).branchName}</span></span>}</div><p className="mt-1 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(booking.startsAt)}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColors[booking.status] ?? statusColors.confirmed}`}>{statusText[booking.status]?.[locale] ?? booking.status}</span>{booking.status === 'confirmed' && <BookingStatusActions slug={slug} bookingId={booking.id} locale={locale} />}</div></div>)}</div></div>
           </div>
         )}
 
@@ -815,7 +1113,7 @@ export default async function TenantDashboard(props: {
                       </span>
                     ) : (
                       <a
-                        href={`?tab=bookings&view=calendar${statusFilter && statusFilter !== 'all' ? `&status=${statusFilter}` : ''}`}
+                        href={`?tab=bookings&view=calendar${statusFilter && statusFilter !== 'all' ? `&status=${statusFilter}` : ''}${selectedBranchId ? `&branch=${selectedBranchId}` : ''}`}
                         className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-ink-muted transition hover:text-[#172033]"
                       >
                         <CalendarDays aria-hidden="true" className="h-3.5 w-3.5" />
@@ -827,6 +1125,8 @@ export default async function TenantDashboard(props: {
                     slug={slug}
                     locale={locale}
                     currency={access.tenant.currency}
+                    branches={branchOptions}
+                    selectedBranchId={selectedBranchId}
                     services={serviceRows.map((s) => ({
                       id: s.id,
                       name: s.name || s.fallbackName || (rtl ? 'خدمة' : 'Service'),
@@ -863,7 +1163,7 @@ export default async function TenantDashboard(props: {
                   {/* Status Filter Tabs / Chips */}
               <div className="mt-5 flex flex-wrap items-center gap-2 border-b border-border pb-4">
                 <a
-                  href="?tab=bookings"
+                  href={`?tab=bookings${selectedBranchId ? `&branch=${selectedBranchId}` : ''}`}
                   className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
                     statusFilter === 'all'
                       ? 'bg-brand-teal text-white shadow-sm'
@@ -875,7 +1175,7 @@ export default async function TenantDashboard(props: {
                 {ALL_BOOKING_STATUSES.map((st) => (
                   <a
                     key={st}
-                    href={`?tab=bookings&status=${st}`}
+                    href={`?tab=bookings&status=${st}${selectedBranchId ? `&branch=${selectedBranchId}` : ''}`}
                     className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
                       statusFilter === st
                         ? 'bg-brand-teal text-white shadow-sm'
@@ -931,6 +1231,12 @@ export default async function TenantDashboard(props: {
                                   {rtl ? 'لوحة التحكم' : 'Dashboard'}
                                 </span>
                               )}
+                              {b.branchName && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[#f0faf9] border border-brand-teal/20 px-2 py-0.5 text-[11px] font-semibold text-brand-teal">
+                                  <Building2 className="h-3 w-3" aria-hidden="true" />
+                                  <span>{b.branchName}</span>
+                                </span>
+                              )}
                             </div>
 
                             {/* Date & Time */}
@@ -982,6 +1288,14 @@ export default async function TenantDashboard(props: {
                           </summary>
 
                           <div className="mt-3 space-y-4 pt-2 text-xs">
+                            {b.branchName && (
+                              <div className="flex items-center gap-2 rounded-xl bg-surface px-3 py-2 border border-border text-xs">
+                                <Building2 className="h-3.5 w-3.5 text-brand-teal shrink-0" aria-hidden="true" />
+                                <span className="font-semibold text-ink-muted">{rtl ? 'الفرع:' : 'Branch:'}</span>
+                                <span className="font-semibold text-[#172033]">{b.branchName}</span>
+                                {b.branchAddress && <span className="text-ink-muted font-normal">({b.branchAddress})</span>}
+                              </div>
+                            )}
                             {/* Service Items Breakdown */}
                             <div>
                               <h4 className="font-semibold text-[#172033] mb-2">
@@ -1122,18 +1436,31 @@ export default async function TenantDashboard(props: {
         )}
 
         {tab === 'customers' && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.customers}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'آخر العملاء الذين حجزوا معك.' : 'The latest customers who booked with you.'}</p></div><span className="shrink-0 rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{customerCount[0]?.value ?? 0}</span></div><div className="mt-5 divide-y divide-border">{customerRows.length === 0 ? <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">{locale === 'ar' ? 'لا يوجد عملاء بعد.' : 'No customers yet.'}</div> : customerRows.map((customer) => <div key={customer.id} className="flex flex-wrap items-center justify-between gap-3 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{customer.name}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{customer.phone}{customer.email ? ` · ${customer.email}` : ''}</p></div><p className="shrink-0 text-xs text-ink-muted">{new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' }).format(customer.createdAt)}</p></div>)}</div>
-              {customerCount[0]?.value > pageSize && (
-                <div className="mt-5 flex items-center justify-center gap-3">
-                  {page > 1 && <a href={`?tab=customers&page=${page - 1}`} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal">{rtl ? '→' : '←'} {rtl ? 'السابق' : 'Previous'}</a>}
-                  <span className="text-sm text-ink-muted">{page} / {Math.ceil((customerCount[0]?.value ?? 0) / pageSize)}</span>
-                  {page * pageSize < (customerCount[0]?.value ?? 0) && <a href={`?tab=customers&page=${page + 1}`} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-ink-muted transition hover:border-brand-teal hover:text-brand-teal">{rtl ? 'التالي' : 'Next'} {rtl ? '←' : '→'}</a>}
-                </div>
-              )}
-            </div>
-          </div>
+          <CustomersTab
+            customerRows={customerRows.map((c) => ({
+              ...c,
+              createdAt: c.createdAt.toISOString(),
+            }))}
+            customerBookingStats={customerBookingStats.map((s) => ({
+              customerId: s.customerId,
+              bookingCount: s.bookingCount,
+              lastBookingAt: s.lastBookingAt ? new Date(s.lastBookingAt).toISOString() : null,
+            }))}
+            customerCount={customerCount[0]?.value ?? 0}
+            newThisMonth={newThisMonth}
+            returningCount={returningCount}
+            notesCount={notesCount}
+            customerSearch={customerSearch}
+            currentFilter={customerFilter}
+            currentSort={customerSort}
+            page={page}
+            pageSize={pageSize}
+            customerSearchTotal={customerSearchTotal}
+            locale={locale}
+            rtl={rtl}
+          />
         )}
+
 
         {tab === 'website' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -1185,6 +1512,16 @@ export default async function TenantDashboard(props: {
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">{t.services}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أدر الخدمات التي يمكن حجزها من موقعك.' : 'Manage services customers can book.'}</p></div><span className="rounded-full bg-[#f0faf9] px-3 py-1 text-xs font-semibold text-brand-teal">{serviceRows.length}</span></div><div className="mt-5 space-y-2">{serviceRows.map((service) => { const serviceName = service.name || service.fallbackName; return <div key={service.id} className="rounded-2xl bg-surface px-4 py-3"><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{serviceName ?? (locale === 'ar' ? 'خدمة بدون ترجمة' : 'Untitled service')}</p><p className="mt-1 text-xs text-ink-muted">{service.durationMin} {locale === 'ar' ? 'دقيقة' : 'min'} · {service.priceAmount} {access.tenant.currency}</p></div><div className="flex min-w-0 flex-wrap items-center gap-3"><ServiceEditForm slug={slug} locale={locale} service={{ id: service.id, name: serviceName ?? '', durationMin: service.durationMin, priceAmount: String(service.priceAmount) }} /><ServiceDeleteButton slug={slug} locale={locale} serviceId={service.id} serviceName={serviceName ?? (locale === 'ar' ? 'خدمة بدون ترجمة' : 'Untitled service')} bookingCount={bookingsByService.get(service.id) ?? 0} /></div></div></div> })}</div><ServiceForm locale={locale} slug={slug} /></div>
           </div>
+        )}
+
+        {tab === 'branches' && (
+          <BranchesTab
+            locale={locale}
+            slug={slug}
+            branches={branchListRows}
+            canManage={hasPermission(role, 'branches:manage')}
+            canArchive={hasPermission(role, 'branches:archive')}
+          />
         )}
 
         {tab === 'team' && (
@@ -1437,8 +1774,8 @@ export default async function TenantDashboard(props: {
 
         {tab === 'schedule' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'ساعات العمل' : 'Working hours'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'حدد الأوقات العامة المتاحة للحجز.' : 'Set the general hours available for bookings.'}</p><WorkingHoursForm locale={locale} slug={slug} hours={hoursRows} /></div>
-            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'استثناءات المواعيد' : 'Date overrides'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف العطلات أو ساعات العمل الخاصة.' : 'Add holidays or custom hours.'}</p><div className="mt-5 space-y-2">{overrideRows.map((override) => <div key={override.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{override.label ?? (override.kind === 'closed' ? (locale === 'ar' ? 'مغلق' : 'Closed') : (locale === 'ar' ? 'ساعات مخصصة' : 'Custom hours'))}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{override.startDate} → {override.endDate}{override.startTime ? ` · ${override.startTime}–${override.endTime}` : ''}</p></div><DateOverrideDeleteButton locale={locale} slug={slug} overrideId={override.id} /></div>)}</div><DateOverrideForm locale={locale} slug={slug} /></div>
+            <div className="mt-9 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'ساعات العمل' : 'Working hours'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'حدد الأوقات العامة المتاحة للحجز.' : 'Set the general hours available for bookings.'}</p><WorkingHoursForm locale={locale} slug={slug} hours={effectiveHours} branchId={selectedBranchId} /></div>
+            <div className="mt-6 rounded-3xl border border-border bg-paper p-5 shadow-float sm:p-6"><h2 className="text-lg font-semibold">{locale === 'ar' ? 'استثناءات المواعيد' : 'Date overrides'}</h2><p className="mt-1 text-sm text-ink-muted">{locale === 'ar' ? 'أضف العطلات أو ساعات العمل الخاصة.' : 'Add holidays or custom hours.'}</p><div className="mt-5 space-y-2">{effectiveOverrides.map((override: typeof overrideRows[number]) => <div key={override.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="font-semibold wrap-anywhere">{override.label ?? (override.kind === 'closed' ? (locale === 'ar' ? 'مغلق' : 'Closed') : (locale === 'ar' ? 'ساعات مخصصة' : 'Custom hours'))}</p><p className="mt-1 text-xs text-ink-muted wrap-anywhere">{override.startDate} → {override.endDate}{override.startTime ? ` · ${override.startTime}–${override.endTime}` : ''}</p></div><DateOverrideDeleteButton locale={locale} slug={slug} overrideId={override.id} /></div>)}</div><DateOverrideForm locale={locale} slug={slug} branchId={selectedBranchId} /></div>
           </div>
         )}
 
@@ -1453,25 +1790,33 @@ export default async function TenantDashboard(props: {
 
         {tab === 'settings' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6 mt-9">
-            {/* Settings sub-navigation */}
+            {/* Settings sub-navigation: Receptionist & Staff only have Profile & Account sections */}
             <div className="flex flex-wrap items-center gap-2">
               {role !== 'receptionist' && role !== 'staff' && (
                 <a
                   href="?tab=settings"
-                  className={sub === 'profile' || sub === 'security'
-                    ? 'inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2 text-xs font-semibold text-ink-muted hover:border-brand-teal hover:text-brand-teal transition'
-                    : 'inline-flex items-center gap-2 rounded-xl bg-brand-teal px-3.5 py-2 text-xs font-semibold text-white shadow-xs'}
+                  className={sub !== 'profile' && sub !== 'security'
+                    ? 'inline-flex items-center gap-2 rounded-xl bg-brand-teal px-3.5 py-2 text-xs font-semibold text-white shadow-xs'
+                    : 'inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2 text-xs font-semibold text-ink-muted hover:border-brand-teal hover:text-brand-teal transition'}
                 >
                   <span>{locale === 'ar' ? 'إعدادات مساحة العمل' : 'Workspace Settings'}</span>
                 </a>
               )}
               <a
                 href="?tab=settings&sub=profile"
-                className={sub === 'profile' || sub === 'security'
+                className={sub === 'profile' || (!sub && (role === 'receptionist' || role === 'staff'))
                   ? 'inline-flex items-center gap-2 rounded-xl bg-brand-teal px-3.5 py-2 text-xs font-semibold text-white shadow-xs'
                   : 'inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2 text-xs font-semibold text-ink-muted hover:border-brand-teal hover:text-brand-teal transition'}
               >
-                <span>{locale === 'ar' ? 'الملف الشخصي والحساب' : 'My Profile & Account'}</span>
+                <span>{locale === 'ar' ? 'الملف الشخصي' : 'Profile'}</span>
+              </a>
+              <a
+                href="?tab=settings&sub=security"
+                className={sub === 'security'
+                  ? 'inline-flex items-center gap-2 rounded-xl bg-brand-teal px-3.5 py-2 text-xs font-semibold text-white shadow-xs'
+                  : 'inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2 text-xs font-semibold text-ink-muted hover:border-brand-teal hover:text-brand-teal transition'}
+              >
+                <span>{locale === 'ar' ? 'الحساب والأمان' : 'Account & Security'}</span>
               </a>
             </div>
 

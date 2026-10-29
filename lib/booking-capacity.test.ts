@@ -648,7 +648,7 @@ describe('booking architecture decoupling contract', () => {
   it('public booking does not query staff table or loop through staff members', () => {
     expect(publicBookActions).not.toContain('from(staff)')
     expect(publicBookActions).not.toContain('for (const candidate of availableStaff)')
-    expect(publicBookActions).toContain('assertTenantBookingCapacity(tx, tenant.id, blockStart, blockEnd)')
+    expect(publicBookActions).toContain('assertTenantBookingCapacity(tx, tenant.id, blockStart, blockEnd')
   })
 
   it('public booking inserts bookingItems with staffId: null', () => {

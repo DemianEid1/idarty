@@ -88,7 +88,7 @@ const manualBookingSchema = z.object({
   serviceId: z.string().uuid(),
   startsAt: z.string().datetime({ offset: true }),
   customerNote: z.string().max(500).optional().or(z.literal('')),
-  internalNote: z.string().max(500).optional().or(z.literal('')),
+  internalNote: z.string().max(500).optional().or(z.literal('')), branchId: z.string().uuid().optional().or(z.literal('')).transform(v => v || undefined),
 })
 
 export async function createManualBooking(input: z.infer<typeof manualBookingSchema>) {
@@ -126,7 +126,9 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
         tx,
         access.tenant.id,
         blockStart,
-        blockEnd
+        blockEnd,
+        undefined,
+        data.branchId
       )
       if (!capacityCheck.allowed) {
         const err = new Error('TENANT_CAPACITY_EXCEEDED')
@@ -178,6 +180,7 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
         .insert(bookings)
         .values({
           tenantId: access.tenant.id,
+          branchId: data.branchId || null,
           customerId,
           source: 'dashboard',
           status: 'confirmed',
@@ -204,6 +207,7 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
         endsAt: end,
         blockStartsAt: blockStart,
         blockEndsAt: blockEnd,
+        branchId: data.branchId || null,
         priceAmount: service.priceAmount,
       })
 
@@ -221,6 +225,7 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
           source: 'dashboard',
           serviceId: service.id,
           startsAt: start.toISOString(),
+          branchId: data.branchId || null,
         },
       },
       await headers()

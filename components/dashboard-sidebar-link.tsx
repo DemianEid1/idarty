@@ -33,6 +33,11 @@ import type { DashboardNavItem } from '@/lib/dashboard-nav'
  * the transition commits, the URL takes over again. The URL remains the single
  * source of truth for the settled state — including browser Back/Forward and
  * direct URL access, which never set `pending`.
+ *
+ * BRANCH PRESERVATION
+ * -------------------
+ * The `?branch=` param is carried forward on every tab navigation so the
+ * selected branch never resets when the user switches sidebar items.
  */
 export function DashboardSidebarLink({ item }: { item: DashboardNavItem }) {
   const searchParams = useSearchParams()
@@ -40,11 +45,13 @@ export function DashboardSidebarLink({ item }: { item: DashboardNavItem }) {
   const [pending, setPending] = useState(false)
   const navigating = useIsNavigating()
 
+  const branch = searchParams.get('branch')
   const isActive = pending || (!navigating && urlTab === item.id)
+  const href = `?tab=${item.id}${branch ? `&branch=${branch}` : ''}`
 
   return (
     <Link
-      href={`?tab=${item.id}`}
+      href={href}
       aria-current={isActive ? 'page' : undefined}
       className={`flex items-center gap-3 rounded-xl px-3 py-2.5 outline-none transition focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 ${
         isActive ? 'bg-brand-teal font-semibold text-white shadow-sm' : 'text-[#647087] hover:bg-surface'

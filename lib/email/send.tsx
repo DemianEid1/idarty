@@ -30,16 +30,18 @@ export async function sendTransactionalEmail(input: {
   startsAt?: string
   workspaceName?: string
   roleName?: string
+  branchName?: string
+  branchAddress?: string
 }) {
   const locale = input.locale || 'ar'
   const element = input.template === 'verify'
     ? <VerifyEmailEmail locale={locale} url={input.url} />
     : input.template === 'booking'
-      ? <BookingConfirmationEmail locale={locale} url={input.url} startsAt={input.startsAt ?? new Date().toISOString()} />
+      ? <BookingConfirmationEmail locale={locale} url={input.url} startsAt={input.startsAt ?? new Date().toISOString()} branchName={input.branchName} branchAddress={input.branchAddress} />
       : input.template === 'cancellation'
         ? <BookingCancellationEmail locale={locale} url={input.url} startsAt={input.startsAt ?? new Date().toISOString()} />
         : input.template === 'reminder'
-          ? <BookingReminderEmail locale={locale} url={input.url} startsAt={input.startsAt ?? new Date().toISOString()} />
+          ? <BookingReminderEmail locale={locale} url={input.url} startsAt={input.startsAt ?? new Date().toISOString()} branchName={input.branchName} branchAddress={input.branchAddress} />
           : input.template === 'invite'
             ? <EmployeeInvitationEmail locale={locale} url={input.url} workspaceName={input.workspaceName} roleName={input.roleName} />
             : <ResetPasswordEmail locale={locale} url={input.url} />

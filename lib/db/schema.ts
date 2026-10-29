@@ -127,6 +127,47 @@ export const tenantTranslations = pgTable(
   (t) => [primaryKey({ columns: [t.tenantId, t.locale] })],
 )
 
+// --- Branches (Physical Locations) ----------------------------------------
+export const branches = pgTable('branches', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  slug: text('slug').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  isDefault: boolean('is_default').notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
+  phoneE164: text('phone_e164'),
+  email: text('email'),
+  bookingCapacity: integer('booking_capacity').notNull().default(1),
+  createdAt: tsz('created_at').notNull().defaultNow(),
+  updatedAt: tsz('updated_at').notNull().defaultNow(),
+  archivedAt: tsz('archived_at'),
+})
+
+export const branchTranslations = pgTable(
+  'branch_translations',
+  {
+    tenantId: uuid('tenant_id').notNull(),
+    branchId: uuid('branch_id').notNull().references(() => branches.id, { onDelete: 'cascade' }),
+    locale: appLocale('locale').notNull(),
+    name: text('name').notNull(),
+    address: text('address'),
+    description: text('description'),
+  },
+  (t) => [primaryKey({ columns: [t.branchId, t.locale] })],
+)
+
+export const staffBranches = pgTable(
+  'staff_branches',
+  {
+    staffId: uuid('staff_id').notNull().references(() => staff.id, { onDelete: 'cascade' }),
+    branchId: uuid('branch_id').notNull().references(() => branches.id, { onDelete: 'cascade' }),
+    tenantId: uuid('tenant_id').notNull(),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    createdAt: tsz('created_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.staffId, t.branchId] })],
+)
+
 export const memberships = pgTable('memberships', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
@@ -226,6 +267,7 @@ export const tenantInvitations = pgTable('tenant_invitations', {
 
 // --- Availability ----------------------------------------------------------
 export const workingHours = pgTable('working_hours', {
+  branchId: uuid('branch_id'),
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   staffId: uuid('staff_id'),
@@ -236,6 +278,7 @@ export const workingHours = pgTable('working_hours', {
 })
 
 export const dateOverrides = pgTable('date_overrides', {
+  branchId: uuid('branch_id'),
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   staffId: uuid('staff_id'),
@@ -264,6 +307,7 @@ export const customers = pgTable('customers', {
 })
 
 export const bookings = pgTable('bookings', {
+  branchId: uuid('branch_id'),
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   customerId: uuid('customer_id').notNull(),
@@ -284,6 +328,7 @@ export const bookings = pgTable('bookings', {
 })
 
 export const bookingItems = pgTable('booking_items', {
+  branchId: uuid('branch_id'),
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),
   bookingId: uuid('booking_id').notNull(),

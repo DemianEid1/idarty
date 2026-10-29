@@ -10,6 +10,7 @@ const ids = {
   serviceOne: '00000000-0000-4000-8000-000000000002',
   serviceTwo: '00000000-0000-4000-8000-000000000003',
   staff: '00000000-0000-4000-8000-000000000004',
+  branch: '00000000-0000-4000-8000-000000000005',
 }
 
 async function main() {
@@ -24,7 +25,10 @@ async function main() {
     await client.query(`INSERT INTO memberships (tenant_id, user_id, role, status) VALUES ($1, $2, 'owner', 'active') ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = 'owner', status = 'active'`, [ids.tenant, userId])
     await client.query(`INSERT INTO services (id, tenant_id, duration_min, price_amount, sort_order) VALUES ($1, $3, 60, 450, 1), ($2, $3, 45, 300, 2) ON CONFLICT (id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, is_active = true`, [ids.serviceOne, ids.serviceTwo, ids.tenant])
     await client.query(`INSERT INTO staff (id, tenant_id, email, is_active) VALUES ($1, $2, 'doctor@e2e-nile-wellness.idarty.com', true) ON CONFLICT (id) DO UPDATE SET is_active = true`, [ids.staff, ids.tenant])
-    for (let weekday = 0; weekday < 6; weekday++) await client.query(`INSERT INTO working_hours (tenant_id, staff_id, weekday, start_time, end_time) VALUES ($1, $2, $3, '09:00', '17:00') ON CONFLICT DO NOTHING`, [ids.tenant, ids.staff, weekday])
+    await client.query(`INSERT INTO branches (id, tenant_id, slug, is_default, booking_capacity, phone_e164, email) VALUES ($1, $2, 'main', true, 2, '+201000000000', 'hello@e2e-nile-wellness.idarty.com') ON CONFLICT (tenant_id, slug) DO UPDATE SET is_default = true`, [ids.branch, ids.tenant])
+  await client.query(`INSERT INTO branch_translations (tenant_id, branch_id, locale, name, address) VALUES ($1, $2, 'ar', 'فرع المعادي الرئيسي', 'المعادي، القاهرة'), ($1, $2, 'en', 'E2E Main Maadi Branch', 'Maadi, Cairo') ON CONFLICT (branch_id, locale) DO NOTHING`, [ids.tenant, ids.branch])
+  await client.query(`INSERT INTO staff_branches (staff_id, branch_id, tenant_id, is_primary) VALUES ($1, $2, $3, true) ON CONFLICT DO NOTHING`, [ids.staff, ids.branch, ids.tenant])
+  for (let weekday = 0; weekday < 6; weekday++) await client.query(`INSERT INTO working_hours (tenant_id, staff_id, weekday, start_time, end_time) VALUES ($1, $2, $3, '09:00', '17:00') ON CONFLICT DO NOTHING`, [ids.tenant, ids.staff, weekday])
     await client.query('COMMIT')
     console.log('Seeded idempotent E2E fixtures')
   } catch (error) {

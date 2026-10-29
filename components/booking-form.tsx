@@ -8,8 +8,9 @@ import { useToast } from '@/components/toast'
 import type { BookingTheme } from '@/lib/booking-theme'
 
 type Service = { id: string; name: string | null; durationMin: number; priceAmount: string }
+type Branch = { id: string; name: string | null; address?: string | null }
 
-export function BookingForm({ locale, slug, slots, services, defaultServiceId, theme }: { locale: Locale; slug: string; slots: string[]; services: Service[]; defaultServiceId?: string; theme: BookingTheme }) {
+export function BookingForm({ locale, slug, slots, services, branches, defaultServiceId, defaultBranchId, theme }: { locale: Locale; slug: string; slots: string[]; services: Service[]; branches?: Branch[]; defaultServiceId?: string; defaultBranchId?: string; theme: BookingTheme }) {
   const rtl = locale === 'ar'
   const [pending, startTransition] = useTransition()
   const router = useRouter()
@@ -26,13 +27,19 @@ export function BookingForm({ locale, slug, slots, services, defaultServiceId, t
     router.replace(`${pathname}?${params.toString()}`)
   }, [pathname, searchParams, router])
 
+  const handleBranchChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('branch', e.target.value)
+    router.replace(`${pathname}?${params.toString()}`)
+  }, [pathname, searchParams, router])
+
   return <form dir={rtl ? 'rtl' : 'ltr'} className="space-y-4" onSubmit={(event) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     setMessage('')
     setSuggestions([])
     startTransition(async () => {
-      const result = await createPublicBooking({ slug, locale, serviceId: String(form.get('serviceId')), fullName: String(form.get('fullName')), phone: String(form.get('phone')), email: String(form.get('email') || ''), startsAt: new Date(String(form.get('startsAt'))).toISOString() })
+      const result = await createPublicBooking({ slug, locale, serviceId: String(form.get('serviceId')), branchId: form.get('branchId') ? String(form.get('branchId')) : undefined, fullName: String(form.get('fullName')), phone: String(form.get('phone')), email: String(form.get('email') || ''), startsAt: new Date(String(form.get('startsAt'))).toISOString() })
       if (result.ok) {
         toast('success', rtl ? 'تم تأكيد الحجز بنجاح' : 'Booking confirmed successfully')
         router.push(`/${locale}/tenants/${slug}/book/confirmed?booking=${result.bookingId}`)
@@ -43,6 +50,24 @@ export function BookingForm({ locale, slug, slots, services, defaultServiceId, t
       }
     })
   }}>
+    {branches && branches.length > 0 && (
+      <label className="block text-sm font-semibold" style={{ color: 'var(--booking-text)' }}>
+        {rtl ? 'الفرع' : 'Branch'}
+        <select
+          name="branchId"
+          defaultValue={defaultBranchId}
+          onChange={handleBranchChange}
+          className="mt-2 h-12 w-full rounded-xl px-4 outline-none"
+          style={{ borderColor: 'var(--booking-border)', backgroundColor: 'var(--booking-surface)', color: 'var(--booking-text)' }}
+        >
+          {branches.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}{b.address ? ` (${b.address})` : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+    )}
     <label className="block text-sm font-semibold" style={{ color: 'var(--booking-text)' }}>{rtl ? 'الخدمة' : 'Service'}<select required name="serviceId" defaultValue={defaultServiceId} onChange={handleServiceChange} className="mt-2 h-12 w-full rounded-xl px-4 outline-none" style={{ borderColor: 'var(--booking-border)', backgroundColor: 'var(--booking-surface)', color: 'var(--booking-text)' }}><option value="" disabled>{rtl ? 'اختر خدمة' : 'Choose a service'}</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.durationMin} {rtl ? 'دقيقة' : 'min'})</option>)}</select></label>
     <label className="block text-sm font-semibold" style={{ color: 'var(--booking-text)' }}>{rtl ? 'الاسم الكامل' : 'Full name'}<input required name="fullName" className="mt-2 h-12 w-full rounded-xl px-4 outline-none" style={{ borderColor: 'var(--booking-border)', backgroundColor: 'var(--booking-surface)', color: 'var(--booking-text)' }} /></label>
     <label className="block text-sm font-semibold" style={{ color: 'var(--booking-text)' }}>{rtl ? 'رقم الهاتف' : 'Phone'}<input required name="phone" type="tel" className="mt-2 h-12 w-full rounded-xl px-4 outline-none" style={{ borderColor: 'var(--booking-border)', backgroundColor: 'var(--booking-surface)', color: 'var(--booking-text)' }} /></label>

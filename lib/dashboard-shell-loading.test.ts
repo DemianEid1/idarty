@@ -143,7 +143,7 @@ describe('4. the shared nav module is the single source of truth', () => {
       navModule.indexOf(']', navModule.indexOf("id: 'settings'"))
     )
     const ids = [...block.matchAll(/id: '([a-z]+)'/g)].map((m) => m[1])
-    expect(ids).toEqual(['overview', 'bookings', 'customers', 'services', 'team', 'schedule', 'website', 'settings'])
+    expect(ids).toEqual(['overview', 'bookings', 'customers', 'services', 'branches', 'team', 'schedule', 'website', 'settings'])
   })
 
   it('the page uses the shared copy instead of its own', () => {
@@ -176,7 +176,7 @@ describe('5. the active tab still highlights correctly', () => {
 
   it('uses a client-side transition so the shell is preserved', () => {
     expect(link).toContain("import Link from 'next/link'")
-    expect(link).toContain('href={`?tab=${item.id}`}')
+    expect(link).toContain('?tab=${item.id}')
   })
 
   it('the mobile drawer receives the same items', () => {

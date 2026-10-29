@@ -5,12 +5,12 @@ import { createDateOverride } from '@/app/[locale]/tenants/[slug]/dashboard/over
 import type { Locale } from '@/lib/i18n'
 import { useToast } from '@/components/toast'
 
-export function DateOverrideForm({ locale, slug }: { locale: Locale; slug: string }) {
+export function DateOverrideForm({ locale, slug, branchId }: { locale: Locale; slug: string; branchId?: string }) {
   const { toast } = useToast()
   const [pending, startTransition] = useTransition()
   const rtl = locale === 'ar'
   return <form action={(formData) => startTransition(async () => { try { await createDateOverride(formData); toast('success', rtl ? 'تمت إضافة الاستثناء' : 'Override added') } catch { toast('error', rtl ? 'تعذر الإضافة' : 'Could not add override') } })} className="mt-5 grid gap-3 sm:grid-cols-2">
-    <input type="hidden" name="locale" value={locale} /><input type="hidden" name="slug" value={slug} />
+    <input type="hidden" name="locale" value={locale} /><input type="hidden" name="slug" value={slug} />{branchId && <input type="hidden" name="branchId" value={branchId} />}
     <label className="text-sm font-semibold">{rtl ? 'من تاريخ' : 'Start date'}<input required name="startDate" type="date" className="mt-2 h-11 w-full rounded-xl border border-[#e1e5ed] px-3" /></label>
     <label className="text-sm font-semibold">{rtl ? 'إلى تاريخ' : 'End date'}<input required name="endDate" type="date" className="mt-2 h-11 w-full rounded-xl border border-[#e1e5ed] px-3" /></label>
     <label className="text-sm font-semibold">{rtl ? 'نوع الاستثناء' : 'Override type'}<select name="kind" className="mt-2 h-11 w-full rounded-xl border border-[#e1e5ed] px-3"><option value="closed">{rtl ? 'مغلق' : 'Closed'}</option><option value="custom_hours">{rtl ? 'ساعات مخصصة' : 'Custom hours'}</option></select></label>

@@ -18,11 +18,15 @@ export type Permission =
   | 'team:role:manage'
   | 'team:archive'
   | 'website:manage'
+  | 'branches:view'
+  | 'branches:manage'
+  | 'branches:archive'
   | 'workspace:manage'
   | 'workspace:owner'
 
 export const ROLE_PERMISSIONS: Record<MemberRole, readonly Permission[]> = {
   receptionist: [
+    'branches:view',
     'dashboard:view',
     'booking:create',
     'booking:status',
@@ -34,6 +38,7 @@ export const ROLE_PERMISSIONS: Record<MemberRole, readonly Permission[]> = {
     'team:view',
   ],
   staff: [
+    'branches:view',
     'dashboard:view',
     'booking:create',
     'booking:status',
@@ -43,6 +48,8 @@ export const ROLE_PERMISSIONS: Record<MemberRole, readonly Permission[]> = {
     'team:view',
   ],
   manager: [
+    'branches:view',
+    'branches:manage',
     'dashboard:view',
     'booking:create',
     'booking:status',
@@ -60,6 +67,9 @@ export const ROLE_PERMISSIONS: Record<MemberRole, readonly Permission[]> = {
     'website:manage',
   ],
   admin: [
+    'branches:view',
+    'branches:manage',
+    'branches:archive',
     'dashboard:view',
     'booking:create',
     'booking:status',
@@ -80,6 +90,9 @@ export const ROLE_PERMISSIONS: Record<MemberRole, readonly Permission[]> = {
     'workspace:manage',
   ],
   owner: [
+    'branches:view',
+    'branches:manage',
+    'branches:archive',
     'dashboard:view',
     'booking:create',
     'booking:status',
@@ -170,6 +183,18 @@ export const PERMISSION_LABELS: Record<Permission, { ar: { title: string; desc: 
   'team:archive': {
     ar: { title: 'أرشفة الموظفين', desc: 'تعطيل حسابات الموظفين وإيقاف وصولهم.' },
     en: { title: 'Archive Staff', desc: 'Deactivate staff accounts and revoke access.' },
+  },
+  'branches:view': {
+    ar: { title: 'عرض الفروع', desc: 'الاطلاع على قائمة الفروع ومواقعها.' },
+    en: { title: 'View Branches', desc: 'View branches directory and location information.' },
+  },
+  'branches:manage': {
+    ar: { title: 'إدارة الفروع', desc: 'إضافة وتعديل بيانات وساعات عمل الفروع.' },
+    en: { title: 'Manage Branches', desc: 'Create and update branch details and schedules.' },
+  },
+  'branches:archive': {
+    ar: { title: 'أرشفة الفروع', desc: 'إيقاف وتعطيل الفروع عن استقبال الحجوزات.' },
+    en: { title: 'Archive Branches', desc: 'Deactivate and archive branches from taking bookings.' },
   },
   'website:manage': {
     ar: { title: 'إدارة الموقع العام', desc: 'تخصيص محتوى الموقع، الأقسام، ونشر التحديثات.' },

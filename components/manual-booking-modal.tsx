@@ -16,6 +16,8 @@ export interface ManualBookingModalProps {
     durationMin: number
     priceAmount: string
   }>
+  branches?: Array<{ id: string; name: string; isDefault?: boolean }>
+  selectedBranchId?: string
 }
 
 function getDefaultDateTime(): string {
@@ -31,6 +33,8 @@ export function ManualBookingModal({
   locale,
   currency,
   services,
+  branches,
+  selectedBranchId,
 }: ManualBookingModalProps) {
   const rtl = locale === 'ar'
   const { toast } = useToast()
@@ -42,6 +46,7 @@ export function ManualBookingModal({
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [selectedServiceId, setSelectedServiceId] = useState(services[0]?.id || '')
+  const [selectedBranchIdState, setSelectedBranchIdState] = useState(selectedBranchId || branches?.find((b) => b.isDefault)?.id || branches?.[0]?.id || '')
   const [startsAt, setStartsAt] = useState(getDefaultDateTime)
   const [customerNote, setCustomerNote] = useState('')
   const [internalNote, setInternalNote] = useState('')
@@ -51,6 +56,7 @@ export function ManualBookingModal({
     setCustomerPhone('')
     setCustomerEmail('')
     setSelectedServiceId(services[0]?.id || '')
+    setSelectedBranchIdState(selectedBranchId || branches?.find((b) => b.isDefault)?.id || branches?.[0]?.id || '')
     setStartsAt(getDefaultDateTime())
     setCustomerNote('')
     setInternalNote('')
@@ -103,6 +109,7 @@ export function ManualBookingModal({
           startsAt: startDate.toISOString(),
           customerNote: customerNote.trim() || undefined,
           internalNote: internalNote.trim() || undefined,
+          branchId: selectedBranchIdState || undefined,
         })
 
         if (res.ok) {
@@ -257,6 +264,25 @@ export function ManualBookingModal({
                       ))}
                     </select>
                   </div>
+
+                  {branches && branches.length > 0 && (
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-medium text-[#374151]">
+                        {rtl ? 'الفرع *' : 'Branch *'}
+                      </label>
+                      <select
+                        value={selectedBranchIdState}
+                        onChange={(e) => setSelectedBranchIdState(e.target.value)}
+                        className="w-full rounded-xl border border-border bg-paper px-3 py-2 text-xs outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal"
+                      >
+                        {branches.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div className="space-y-1 sm:col-span-2">
                     <label className="font-medium text-[#374151]">

@@ -1,5 +1,16 @@
 import { and, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
-import { bookings, bookingItems, tenants } from '@/lib/db/schema'
+import { bookings, bookingItems, branches, tenants } from '@/lib/db/schema'
+
+/**
+ * Derives a stable, collision-safe 64-bit signed integer from a branch UUID
+ * and acquires a PostgreSQL transaction-scoped advisory lock for that specific branch.
+ */
+export async function acquireBranchBookingLock(tx: any, branchId: string): Promise<void> {
+  assertTransaction(tx, 'acquireBranchBookingLock')
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(('x' || substr(md5('branch_booking_capacity:' || ${branchId}::text), 1, 16))::bit(64)::bigint)`
+  )
+}
 
 /**
  * Derives a stable, collision-safe 64-bit signed integer from a tenant UUID
@@ -182,7 +193,8 @@ export async function getPeakActiveBookingConcurrency(
   tenantId: string,
   blockStart: Date,
   blockEnd: Date,
-  excludeBookingId?: string
+  excludeBookingId?: string,
+  branchId?: string
 ): Promise<number> {
   const conditions = [
     eq(bookingItems.tenantId, tenantId),
@@ -190,6 +202,10 @@ export async function getPeakActiveBookingConcurrency(
     lt(bookingItems.blockStartsAt, blockEnd),
     gt(bookingItems.blockEndsAt, blockStart),
   ]
+
+  if (branchId) {
+    conditions.push(eq(bookingItems.branchId, branchId))
+  }
 
   if (excludeBookingId) {
     conditions.push(ne(bookingItems.bookingId, excludeBookingId))
@@ -206,6 +222,55 @@ export async function getPeakActiveBookingConcurrency(
     .where(and(...conditions))
 
   return calculatePeakConcurrency(rows, blockStart, blockEnd)
+}
+
+/**
+ * Authoritatively verifies whether a branch has available booking capacity
+ * within a serialized database transaction using branch-level advisory locks.
+ */
+export async function assertBranchBookingCapacity(
+  tx: any,
+  tenantId: string,
+  branchId: string,
+  blockStart: Date,
+  blockEnd: Date,
+  excludeBookingId?: string
+): Promise<CapacityCheckResult> {
+  await acquireBranchBookingLock(tx, branchId)
+
+  let maxCapacity = 1
+  try {
+    const branchRecord = await tx.query.branches.findFirst({
+      where: and(eq(branches.id, branchId), eq(branches.tenantId, tenantId)),
+      columns: { bookingCapacity: true },
+    })
+    if (branchRecord?.bookingCapacity) {
+      maxCapacity = Math.max(1, branchRecord.bookingCapacity)
+    } else {
+      const tenantRecord = await tx.query.tenants.findFirst({
+        where: eq(tenants.id, tenantId),
+        columns: { bookingCapacity: true },
+      })
+      maxCapacity = Math.max(1, tenantRecord?.bookingCapacity ?? 1)
+    }
+  } catch {
+    maxCapacity = 1
+  }
+
+  const peakConcurrency = await getPeakActiveBookingConcurrency(
+    tx,
+    tenantId,
+    blockStart,
+    blockEnd,
+    excludeBookingId,
+    branchId
+  )
+
+  return {
+    allowed: peakConcurrency < maxCapacity,
+    currentOverlaps: peakConcurrency,
+    maxCapacity,
+  }
 }
 
 /**
@@ -232,8 +297,13 @@ export async function assertTenantBookingCapacity(
   tenantId: string,
   blockStart: Date,
   blockEnd: Date,
-  excludeBookingId?: string
+  excludeBookingId?: string,
+  branchId?: string
 ): Promise<CapacityCheckResult> {
+  if (branchId) {
+    return assertBranchBookingCapacity(tx, tenantId, branchId, blockStart, blockEnd, excludeBookingId)
+  }
+
   // Step 1: Acquire exclusive transaction advisory lock for this tenant
   await acquireTenantBookingLock(tx, tenantId)
 

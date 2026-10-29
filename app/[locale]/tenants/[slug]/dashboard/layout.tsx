@@ -1,11 +1,11 @@
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
-import { and, eq, or, sql, aliasedTable } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, or, sql, aliasedTable } from 'drizzle-orm'
 import { Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { requireTenantAccess } from '@/lib/authz'
 import { db } from '@/lib/db'
-import { staff, staffTranslations, tenantTranslations } from '@/lib/db/schema'
+import { branches, branchTranslations, staff, staffTranslations, tenantTranslations } from '@/lib/db/schema'
 import { Logo } from '@/components/logo'
 import { LocaleSwitcher } from '@/components/locale-switcher'
 import { DashboardMobileNav } from '@/components/dashboard-mobile-nav'
@@ -15,6 +15,7 @@ import { ContentPending } from '@/components/content-pending'
 import { NavigationCommitWatcher } from '@/components/navigation-commit-watcher'
 import { dashboardCopy, buildDashboardNav } from '@/lib/dashboard-nav'
 import { resolveTenantDisplayName } from '@/lib/tenant-display-name'
+import { DashboardBranchSwitcher } from '@/components/dashboard-branch-switcher'
 import type { Locale } from '@/lib/i18n'
 
 /**
@@ -74,13 +75,16 @@ export default async function DashboardLayout({
   const t = dashboardCopy[typedLocale]
   const nav = buildDashboardNav(typedLocale, access.membership.role)
   const isAdmin = (access.session.user as { isPlatformAdmin?: boolean }).isPlatformAdmin === true
+  const cookieStore = await cookies()
+  const cookieBranch = cookieStore.get(`idarty_branch_${slug}`)?.value
   const adminLabel = rtl ? 'لوحة الإدارة' : 'Admin Panel'
 
   const fallbackStaffTranslations = aliasedTable(staffTranslations, 'layout_fb_staff_trans')
+  const fallbackBranchTranslations = aliasedTable(branchTranslations, 'layout_fb_branch_trans')
 
   // The workspace name for the header. Only the translation row is fetched here;
   // the page keeps its own copy of this query for the data it renders.
-  const [tenantTranslation, userStaff] = await Promise.all([
+  const [tenantTranslation, userStaff, activeBranches] = await Promise.all([
     db.query.tenantTranslations.findFirst({
       where: and(eq(tenantTranslations.tenantId, access.tenant.id), eq(tenantTranslations.locale, typedLocale)),
     }),
@@ -113,6 +117,24 @@ export default async function DashboardLayout({
       // membership-ID match first so LIMIT 1 is always deterministic.
       .orderBy(sql`CASE WHEN ${staff.membershipId} = ${access.membership.id} THEN 0 ELSE 1 END`)
       .limit(1),
+    db
+      .select({
+        id: branches.id,
+        name: branchTranslations.name,
+        fallbackName: fallbackBranchTranslations.name,
+        isDefault: branches.isDefault,
+      })
+      .from(branches)
+      .leftJoin(
+        branchTranslations,
+        and(eq(branchTranslations.branchId, branches.id), eq(branchTranslations.locale, typedLocale))
+      )
+      .leftJoin(
+        fallbackBranchTranslations,
+        and(eq(fallbackBranchTranslations.branchId, branches.id), eq(fallbackBranchTranslations.locale, fallbackLocale))
+      )
+      .where(and(eq(branches.tenantId, access.tenant.id), isNull(branches.archivedAt)))
+      .orderBy(desc(branches.isDefault), asc(branches.sortOrder), asc(branches.createdAt)),
   ])
 
   const staffName = userStaff[0]?.name || userStaff[0]?.fallbackName
@@ -128,6 +150,12 @@ export default async function DashboardLayout({
     'User'
 
   const tenantDisplayName = resolveTenantDisplayName(tenantTranslation, access.tenant.slug)
+
+  const formattedBranches = activeBranches.map((b) => ({
+    id: b.id,
+    name: b.name || b.fallbackName || (rtl ? 'فرع' : 'Branch'),
+    isDefault: b.isDefault,
+  }))
 
   return (
     <main dir={rtl ? 'rtl' : 'ltr'} className="min-h-screen bg-[#f7f8fb] text-[#172033]">
@@ -196,6 +224,7 @@ export default async function DashboardLayout({
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
+                <DashboardBranchSwitcher branches={formattedBranches} locale={typedLocale} slug={slug} initialBranchId={cookieBranch} />
                 {isAdmin && <a href={`/${typedLocale}/admin`} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-700 outline-none transition hover:bg-amber-200 focus-visible:ring-2 focus-visible:ring-amber-500">{rtl ? 'الإدارة' : 'Admin'}</a>}
                 <div className="sr-only" aria-hidden="true">
                   <LocaleSwitcher currentLocale={typedLocale} />
