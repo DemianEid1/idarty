@@ -9,6 +9,7 @@ import { checkRateLimit } from '@/lib/rate-limit'
 import { bookings, bookingItems, branches, branchTranslations, customers, dateOverrides, services, serviceTranslations, tenants, workingHours } from '@/lib/db/schema'
 import { logAudit } from '@/lib/audit'
 import { assertTenantBookingCapacity, calculatePeakConcurrency } from '@/lib/booking-capacity'
+import { isServiceAvailableAtBranch, serviceAvailableAtBranchSql } from '@/lib/branch-services'
 
 const bookingSchema = z.object({
   slug: z.string().min(2).max(80),
@@ -63,6 +64,23 @@ export async function createPublicBooking(input: z.infer<typeof bookingSchema>) 
 
   const service = await db.query.services.findFirst({ where: and(eq(services.id, data.serviceId), eq(services.tenantId, tenant.id), eq(services.isActive, true)) })
   if (!service) return { ok: false as const, message: data.locale === 'ar' ? 'الخدمة غير موجودة.' : 'Service not found.' }
+
+  // Server-side branch/service validation. Never rely on the form only having
+  // filtered the dropdown: a crafted request must not book a service the branch
+  // does not offer. The helper also rejects a branch from another tenant or an
+  // inactive/archived branch.
+  if (data.branchId) {
+    const available = await isServiceAvailableAtBranch(tenant.id, data.branchId, service.id)
+    if (!available) {
+      return {
+        ok: false as const,
+        message:
+          data.locale === 'ar'
+            ? 'هذه الخدمة غير متاحة في الفرع المختار. يرجى اختيار فرع أو خدمة أخرى.'
+            : 'This service is not available at the selected branch. Please choose another branch or service.',
+      }
+    }
+  }
 
   const start = new Date(data.startsAt)
   if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) {
@@ -184,9 +202,22 @@ export async function getAvailableSlots(slug: string, date: string, serviceId?: 
   
   const service = serviceId 
     ? await db.query.services.findFirst({ where: and(eq(services.id, serviceId), eq(services.tenantId, tenant.id), eq(services.isActive, true)) })
-    : await db.query.services.findFirst({ where: and(eq(services.tenantId, tenant.id), eq(services.isActive, true), eq(services.isSample, false)) })
+    : await db.query.services.findFirst({
+        where: and(
+          eq(services.tenantId, tenant.id),
+          eq(services.isActive, true),
+          eq(services.isSample, false),
+          branchId ? serviceAvailableAtBranchSql(branchId) : undefined
+        ),
+      })
   
   if (!service) return []
+
+  // A service disabled for this branch has no bookable slots there.
+  if (branchId && serviceId) {
+    const available = await isServiceAvailableAtBranch(tenant.id, branchId, service.id)
+    if (!available) return []
+  }
 
   const formatter = new Intl.DateTimeFormat('en-US', { timeZone: tenant.timezone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   const startUtc = new Date(`${date}T00:00:00Z`).getTime() - 14 * 3600000
@@ -310,7 +341,7 @@ export async function getAvailableSlots(slug: string, date: string, serviceId?: 
   return Array.from(availableSlotSet).sort()
 }
 
-function createPublicServicesCache(slug: string, locale: 'ar' | 'en') {
+function createPublicServicesCache(slug: string, locale: 'ar' | 'en', branchId?: string) {
   return unstable_cache(
     async () => {
       const tenant = await db.query.tenants.findFirst({ where: eq(tenants.slug, slug) })
@@ -339,7 +370,8 @@ function createPublicServicesCache(slug: string, locale: 'ar' | 'en') {
             eq(services.tenantId, tenant.id),
             eq(services.isActive, true),
             eq(services.isSample, false),
-            isNull(services.deletedAt)
+            isNull(services.deletedAt),
+            branchId ? serviceAvailableAtBranchSql(branchId) : undefined
           )
         )
         .orderBy(services.sortOrder)
@@ -352,13 +384,13 @@ function createPublicServicesCache(slug: string, locale: 'ar' | 'en') {
         priceAmount: r.priceAmount,
       }))
     },
-    ['public-services', slug, locale],
+    ['public-services', slug, locale, branchId ?? 'all'],
     { revalidate: 60, tags: [`tenant-services-${slug}-${locale}`] }
   )
 }
 
-export async function getPublicServices(slug: string, locale: 'ar' | 'en') {
-  const getCachedPublicServices = createPublicServicesCache(slug, locale)
+export async function getPublicServices(slug: string, locale: 'ar' | 'en', branchId?: string) {
+  const getCachedPublicServices = createPublicServicesCache(slug, locale, branchId)
   return getCachedPublicServices()
 } 
 

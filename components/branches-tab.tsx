@@ -5,6 +5,7 @@ import {
   Building2,
   Clock,
   Edit2,
+  ListChecks,
   Mail,
   MapPin,
   Phone,
@@ -22,6 +23,7 @@ import {
   createBranch,
   setDefaultBranch,
   updateBranch,
+  updateBranchServices,
 } from '@/app/[locale]/tenants/[slug]/dashboard/branch-actions'
 
 export type BranchData = {
@@ -38,12 +40,19 @@ export type BranchData = {
   isActive: boolean
   staffCount: number
   todayBookingsCount: number
+  availableServiceIds: string[]
+}
+
+export type BranchServiceOption = {
+  id: string
+  name: string
 }
 
 type Props = {
   locale: Locale
   slug: string
   branches: BranchData[]
+  services: BranchServiceOption[]
   canManage: boolean
   canArchive: boolean
 }
@@ -52,6 +61,7 @@ export function BranchesTab({
   locale,
   slug,
   branches,
+  services,
   canManage,
   canArchive,
 }: Props) {
@@ -61,6 +71,7 @@ export function BranchesTab({
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editingBranch, setEditingBranch] = useState<BranchData | null>(null)
   const [archivingBranch, setArchivingBranch] = useState<BranchData | null>(null)
+  const [managingServicesBranch, setManagingServicesBranch] = useState<BranchData | null>(null)
 
   const handleSetDefault = (branchId: string) => {
     startTransition(async () => {
@@ -197,18 +208,41 @@ export function BranchesTab({
                             : `Capacity: ${b.bookingCapacity} concurrent clients`}
                         </span>
                       </div>
+                      <div className="flex items-center gap-2 pt-1 font-medium text-[#172033]">
+                        <ListChecks className="h-3.5 w-3.5 shrink-0 text-brand-teal" />
+                        <span>
+                          {rtl
+                            ? `${b.availableServiceIds.length} من ${services.length} خدمة متاحة`
+                            : `${b.availableServiceIds.length} of ${services.length} services available`}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   {/* Actions Bar */}
                   <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-                    <a
-                      href={`?tab=schedule&branch=${b.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-surface px-2.5 py-1.5 text-xs font-medium text-brand-teal hover:bg-[#f0faf9] transition"
-                    >
-                      <Clock className="h-3.5 w-3.5" />
-                      <span>{rtl ? 'ساعات العمل' : 'Schedule'}</span>
-                    </a>
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={`?tab=schedule&branch=${b.id}`}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-surface px-2.5 py-1.5 text-xs font-medium text-brand-teal hover:bg-[#f0faf9] transition"
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>{rtl ? 'ساعات العمل' : 'Schedule'}</span>
+                      </a>
+
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => setManagingServicesBranch(b)}
+                          disabled={pending}
+                          title={rtl ? 'إدارة خدمات الفرع' : 'Manage branch services'}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-surface px-2.5 py-1.5 text-xs font-medium text-brand-teal hover:bg-[#f0faf9] transition cursor-pointer"
+                        >
+                          <ListChecks className="h-3.5 w-3.5" />
+                          <span>{rtl ? 'الخدمات' : 'Services'}</span>
+                        </button>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-1">
                       {canManage && !b.isDefault && (
@@ -275,6 +309,18 @@ export function BranchesTab({
           slug={slug}
           rtl={rtl}
           onClose={() => setEditingBranch(null)}
+        />
+      )}
+
+      {/* ── BRANCH SERVICES MODAL ─────────────────────────────────── */}
+      {managingServicesBranch && (
+        <BranchServicesModal
+          branch={managingServicesBranch}
+          services={services}
+          locale={locale}
+          slug={slug}
+          rtl={rtl}
+          onClose={() => setManagingServicesBranch(null)}
         />
       )}
 
@@ -559,6 +605,175 @@ function BranchModal({
                 : isCreate
                 ? (rtl ? 'إضافة الفرع' : 'Create Branch')
                 : (rtl ? 'حفظ التعديلات' : 'Save Changes')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function BranchServicesModal({
+  branch,
+  services,
+  locale,
+  slug,
+  rtl,
+  onClose,
+}: {
+  branch: BranchData
+  services: BranchServiceOption[]
+  locale: Locale
+  slug: string
+  rtl: boolean
+  onClose: () => void
+}) {
+  const { toast } = useToast()
+  const [pending, startTransition] = useTransition()
+  const [selectedIds, setSelectedIds] = useState<string[]>(branch.availableServiceIds)
+
+  const toggle = (serviceId: string) => {
+    setSelectedIds((current) =>
+      current.includes(serviceId)
+        ? current.filter((id) => id !== serviceId)
+        : [...current, serviceId]
+    )
+  }
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = new FormData()
+    form.append('slug', slug)
+    form.append('locale', locale)
+    form.append('branchId', branch.id)
+    for (const id of selectedIds) form.append('serviceIds', id)
+
+    startTransition(async () => {
+      try {
+        const res = await updateBranchServices(form)
+        if (res.ok) {
+          toast(
+            'success',
+            rtl ? 'تم تحديث خدمات الفرع' : 'Branch services updated successfully'
+          )
+          onClose()
+        } else {
+          toast('error', res.message || (rtl ? 'تعذر تحديث الخدمات' : 'Could not update services'))
+        }
+      } catch (err: any) {
+        toast('error', err.message || (rtl ? 'حدث خطأ' : 'An error occurred'))
+      }
+    })
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200"
+      dir={rtl ? 'rtl' : 'ltr'}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !pending) onClose()
+      }}
+    >
+      <div className="relative w-full max-w-lg rounded-3xl border border-border bg-paper p-6 shadow-2xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+        <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f0faf9] text-brand-teal">
+              <ListChecks className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h3 className="text-base font-semibold text-[#172033]">
+                {rtl ? 'خدمات الفرع' : 'Branch Services'}
+              </h3>
+              <p className="mt-0.5 text-xs text-ink-muted">
+                {branch.name} ·{' '}
+                {rtl
+                  ? 'اختر الخدمات المتاحة للحجز في هذا الفرع فقط.'
+                  : 'Choose which services are bookable at this branch only.'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            aria-label={rtl ? 'إغلاق' : 'Close'}
+            className="rounded-lg p-1 text-ink-muted hover:bg-surface hover:text-[#172033] transition"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-4">
+          {services.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[#dfe4ee] px-5 py-10 text-center text-sm text-ink-muted">
+              {rtl ? 'لا توجد خدمات فعالة لإتاحتها.' : 'No active services to make available.'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-end gap-2 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(services.map((s) => s.id))}
+                  className="rounded-lg px-2 py-1 text-brand-teal transition hover:bg-[#f0faf9]"
+                >
+                  {rtl ? 'تحديد الكل' : 'Select all'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds([])}
+                  className="rounded-lg px-2 py-1 text-ink-muted transition hover:bg-surface"
+                >
+                  {rtl ? 'إلغاء الكل' : 'Clear all'}
+                </button>
+              </div>
+              {services.map((service) => {
+                const checked = selectedIds.includes(service.id)
+                return (
+                  <label
+                    key={service.id}
+                    className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition ${
+                      checked
+                        ? 'border-brand-teal/40 bg-[#f0faf9]'
+                        : 'border-border bg-surface hover:border-brand-teal/30'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(service.id)}
+                      className="h-4 w-4 rounded-md border-border text-brand-teal focus:ring-brand-teal"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#172033]">
+                      {service.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] font-medium text-ink-muted">
+                      {checked ? (rtl ? 'متاحة' : 'Available') : (rtl ? 'غير متاحة' : 'Unavailable')}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={onClose}
+              className="rounded-xl border border-border bg-paper px-4 py-2 text-xs font-semibold text-ink-muted hover:bg-surface transition"
+            >
+              {rtl ? 'إلغاء' : 'Cancel'}
+            </button>
+            <button
+              type="submit"
+              disabled={pending || services.length === 0}
+              className="rounded-xl bg-brand-teal px-5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-[#0d6560] disabled:opacity-50 cursor-pointer"
+            >
+              {pending
+                ? rtl ? 'جارٍ الحفظ...' : 'Saving...'
+                : rtl ? 'حفظ الخدمات' : 'Save services'}
             </button>
           </div>
         </form>

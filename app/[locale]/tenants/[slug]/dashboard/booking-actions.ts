@@ -9,6 +9,7 @@ import { bookingItems, bookings, customers, services } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { logAudit } from '@/lib/audit'
 import { acquireTenantBookingLock, assertTenantBookingCapacity } from '@/lib/booking-capacity'
+import { isServiceAvailableAtBranch } from '@/lib/branch-services'
 
 const inputSchema = z.object({ slug: z.string().min(2), bookingId: z.string().uuid() })
 
@@ -106,6 +107,22 @@ export async function createManualBooking(input: z.infer<typeof manualBookingSch
     return {
       ok: false as const,
       message: data.locale === 'ar' ? 'الخدمة المختارة غير متوفرة.' : 'Selected service is not available.',
+    }
+  }
+
+  // A branch may offer only a subset of the tenant's services. Validate on the
+  // server as well as filtering the picker, and reject branches outside this
+  // tenant or branches that are inactive/archived.
+  if (data.branchId) {
+    const available = await isServiceAvailableAtBranch(access.tenant.id, data.branchId, data.serviceId)
+    if (!available) {
+      return {
+        ok: false as const,
+        message:
+          data.locale === 'ar'
+            ? 'هذه الخدمة غير متاحة في الفرع المختار.'
+            : 'This service is not available at the selected branch.',
+      }
     }
   }
 

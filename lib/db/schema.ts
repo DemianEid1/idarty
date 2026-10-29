@@ -222,6 +222,22 @@ export const serviceTranslations = pgTable(
   (t) => [primaryKey({ columns: [t.serviceId, t.locale] })],
 )
 
+// Per-branch service availability. Services themselves stay tenant-global; a
+// missing row means "available", matching migration 0014's backward-compatible
+// default. Only explicit decisions are stored.
+export const branchServices = pgTable(
+  'branch_services',
+  {
+    tenantId: uuid('tenant_id').notNull(),
+    branchId: uuid('branch_id').notNull().references(() => branches.id, { onDelete: 'cascade' }),
+    serviceId: uuid('service_id').notNull().references(() => services.id, { onDelete: 'cascade' }),
+    isAvailable: boolean('is_available').notNull().default(true),
+    createdAt: tsz('created_at').notNull().defaultNow(),
+    updatedAt: tsz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.branchId, t.serviceId] })],
+)
+
 export const staff = pgTable('staff', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull(),

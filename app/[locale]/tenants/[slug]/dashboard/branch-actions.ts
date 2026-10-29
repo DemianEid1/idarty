@@ -1,11 +1,11 @@
 "use server"
 
 import { headers } from 'next/headers'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { z } from 'zod'
 import { and, count, eq, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { bookings, branches, branchTranslations, staff, staffBranches, tenantTranslations } from '@/lib/db/schema'
+import { bookings, branches, branchServices, branchTranslations, services, staff, staffBranches, tenantTranslations } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { requirePermission } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
@@ -122,6 +122,26 @@ export async function createBranch(formData: FormData) {
         description: input.description || null,
       }))
     )
+
+    // A new branch starts with every globally active service available, so it
+    // behaves like the pre-existing branches until configured otherwise.
+    const tenantServices = await tx
+      .select({ id: services.id })
+      .from(services)
+      .where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true)))
+    if (tenantServices.length > 0) {
+      await tx
+        .insert(branchServices)
+        .values(
+          tenantServices.map((s) => ({
+            tenantId: access.tenant.id,
+            branchId: branch.id,
+            serviceId: s.id,
+            isAvailable: true,
+          }))
+        )
+        .onConflictDoNothing()
+    }
 
     return branch
   })
@@ -387,6 +407,94 @@ export async function archiveBranch(formData: FormData) {
 
   revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)
   revalidatePath(`/${input.locale === 'ar' ? 'en' : 'ar'}/tenants/${input.slug}/dashboard`)
+  return { ok: true as const }
+}
+
+const branchServicesSchema = z.object({
+  slug: z.string().min(1),
+  locale: z.enum(['ar', 'en']),
+  branchId: z.string().uuid(),
+  serviceIds: z.array(z.string().uuid()),
+})
+
+/**
+ * Replace one branch's service availability configuration.
+ *
+ * Every active tenant service gets an explicit row for this branch, so a
+ * service the tenant unchecked is stored as `is_available = false` rather than
+ * deleted (deleting would fall back to the "missing = available" default).
+ * Services and their translations/prices are never modified, and no row for
+ * another branch is touched.
+ */
+export async function updateBranchServices(formData: FormData) {
+  const reqHeaders = await headers()
+  const input = branchServicesSchema.parse({
+    slug: formData.get('slug'),
+    locale: formData.get('locale'),
+    branchId: formData.get('branchId'),
+    serviceIds: formData.getAll('serviceIds').map(String),
+  })
+
+  const access = await requirePermission(reqHeaders, input.slug, 'branches:manage')
+
+  const [branch] = await db
+    .select({ id: branches.id })
+    .from(branches)
+    .where(
+      and(
+        eq(branches.id, input.branchId),
+        eq(branches.tenantId, access.tenant.id),
+        isNull(branches.archivedAt)
+      )
+    )
+  if (!branch) return { ok: false as const, message: input.locale === 'ar' ? 'الفرع غير موجود.' : 'Branch not found.' }
+
+  const activeServices = await db
+    .select({ id: services.id })
+    .from(services)
+    .where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true)))
+
+  // Only tenant-owned service ids are accepted; anything else is ignored rather
+  // than allowing a cross-tenant reference.
+  const ownedIds = new Set(activeServices.map((s) => s.id))
+  const selectedIds = new Set(input.serviceIds.filter((id) => ownedIds.has(id)))
+
+  if (activeServices.length > 0) {
+    await db
+      .insert(branchServices)
+      .values(
+        activeServices.map((s) => ({
+          tenantId: access.tenant.id,
+          branchId: input.branchId,
+          serviceId: s.id,
+          isAvailable: selectedIds.has(s.id),
+          updatedAt: new Date(),
+        }))
+      )
+      .onConflictDoUpdate({
+        target: [branchServices.branchId, branchServices.serviceId],
+        set: { isAvailable: sql`excluded.is_available`, updatedAt: new Date() },
+      })
+  }
+
+  await logAudit(
+    {
+      actorUserId: access.session.user.id,
+      action: 'branch.services_updated',
+      entityType: 'branch',
+      entityId: input.branchId,
+      tenantId: access.tenant.id,
+      metadata: { availableServiceIds: Array.from(selectedIds) },
+    },
+    reqHeaders
+  )
+
+  revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)
+  revalidatePath(`/${input.locale === 'ar' ? 'en' : 'ar'}/tenants/${input.slug}/dashboard`)
+  revalidateTag(`tenant-public-${input.slug}-ar`, 'max')
+  revalidateTag(`tenant-public-${input.slug}-en`, 'max')
+  revalidateTag(`tenant-services-${input.slug}-ar`, 'max')
+  revalidateTag(`tenant-services-${input.slug}-en`, 'max')
   return { ok: true as const }
 }
 

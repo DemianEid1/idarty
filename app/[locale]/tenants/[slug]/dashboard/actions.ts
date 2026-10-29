@@ -2,9 +2,9 @@
 
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { z } from 'zod'
-import { and, count, eq } from 'drizzle-orm'
+import { and, count, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { bookingItems, serviceTranslations, services, staff } from '@/lib/db/schema'
+import { bookingItems, branches, branchServices, serviceTranslations, services, staff } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { headers } from 'next/headers'
 import { logAudit } from '@/lib/audit'
@@ -112,6 +112,25 @@ export async function createService(formData: FormData) {
         description: input.description ?? null,
       }))
     )
+    // A new service is available at every existing active branch by default;
+    // the branch management UI can then disable it per location.
+    const activeBranchRows = await tx
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.tenantId, access.tenant.id), eq(branches.isActive, true), isNull(branches.archivedAt)))
+    if (activeBranchRows.length > 0) {
+      await tx
+        .insert(branchServices)
+        .values(
+          activeBranchRows.map((b) => ({
+            tenantId: access.tenant.id,
+            branchId: b.id,
+            serviceId: created.id,
+            isAvailable: true,
+          }))
+        )
+        .onConflictDoNothing()
+    }
     return created
   })
   revalidatePath(`/${input.locale}/tenants/${input.slug}/dashboard`)

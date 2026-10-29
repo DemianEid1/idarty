@@ -18,13 +18,19 @@ export default async function BookingPage({ params, searchParams }: { params: Pr
     date.setDate(date.getDate() + index)
     return date.toISOString().slice(0, 10)
   })
-  const [services, branches] = await Promise.all([
-    getPublicServices(slug, locale),
-    getPublicBranches(slug, locale),
-  ])
-  const defaultServiceId = service ?? services[0]?.id
-  const defaultBranchId = branch ?? branches.find((b) => b.isDefault)?.id ?? branches[0]?.id
-  const slots = (await Promise.all(dates.map((date) => getAvailableSlots(slug, date, defaultServiceId, defaultBranchId)))).flat()
+  const branches = await getPublicBranches(slug, locale)
+  // Ignore a stale/foreign ?branch= value instead of querying availability for
+  // a branch that is not part of this workspace.
+  const requestedBranchId = branch && branches.some((b) => b.id === branch) ? branch : undefined
+  const defaultBranchId = requestedBranchId ?? branches.find((b) => b.isDefault)?.id ?? branches[0]?.id
+  // Services are listed for the selected branch only. A service disabled at
+  // that branch (or a stale ?service= link) falls back to the first bookable one.
+  const services = await getPublicServices(slug, locale, defaultBranchId)
+  const defaultServiceId =
+    (service && services.some((s) => s.id === service) ? service : undefined) ?? services[0]?.id
+  const slots = services.length === 0
+    ? []
+    : (await Promise.all(dates.map((date) => getAvailableSlots(slug, date, defaultServiceId, defaultBranchId)))).flat()
 
   // Resolve the tenant's published theme for the booking page.
   // Reads ONLY the published configuration — draft changes never leak.

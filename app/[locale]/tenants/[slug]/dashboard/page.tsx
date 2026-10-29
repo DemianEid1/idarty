@@ -47,7 +47,8 @@ import {
 } from '@/lib/calendar-helpers'
 import { CustomersTab } from '@/components/customers-tab'
 import { BranchesTab } from '@/components/branches-tab'
-import { branches, branchTranslations, staffBranches } from '@/lib/db/schema'
+import { branches, branchServices, branchTranslations, staffBranches } from '@/lib/db/schema'
+import { serviceAvailableAtBranchSql } from '@/lib/branch-services'
 
 
 export default async function TenantDashboard(props: {
@@ -59,6 +60,7 @@ export default async function TenantDashboard(props: {
     view?: string
     start?: string
     sub?: string
+    sec?: string
     actor?: string
     staffId?: string
     q?: string
@@ -71,6 +73,7 @@ export default async function TenantDashboard(props: {
   const searchParams = await props.searchParams
   const tab = searchParams.tab || 'overview'
   const sub = searchParams.sub || 'members'
+  const sec = searchParams.sec
   const staffId = searchParams.staffId
   const actorFilter = searchParams.actor || 'all'
   const page = Math.max(1, parseInt(searchParams.page ?? '1', 10) || 1)
@@ -160,7 +163,9 @@ export default async function TenantDashboard(props: {
   const overviewBranchTrans = aliasedTable(branchTranslations, 'overview_branch_trans')
   const overviewFbBranchTrans = aliasedTable(branchTranslations, 'overview_fb_branch_trans')
 
-  // Aggregated booking stats per customer (for sorting and returning filter)
+  // Aggregated booking stats per customer (for sorting and returning filter).
+  // Scoped to the selected branch so "returning", sort-by-bookings and
+  // sort-by-last-visit all describe the branch currently in view.
   const bookingAgg = db
     .select({
       customerId: bookings.customerId,
@@ -168,21 +173,40 @@ export default async function TenantDashboard(props: {
       lastBookingAt: sql<Date>`max(${bookings.startsAt})`.as('last_booking_at'),
     })
     .from(bookings)
-    .where(eq(bookings.tenantId, access.tenant.id))
+    .where(and(
+      eq(bookings.tenantId, access.tenant.id),
+      selectedBranchId ? eq(bookings.branchId, selectedBranchId) : undefined
+    ))
     .groupBy(bookings.customerId)
     .as('booking_agg')
 
-  // Customer tab search and filter conditions
-  const customerBranchCondition =
-    tab === 'customers' && selectedBranchId
-      ? sql`EXISTS (
+  // A customer "belongs" to a branch when they have at least one live booking
+  // there. Used by every customer metric and by the Customers tab, so a branch
+  // selection can never mix unrelated customers in.
+  const branchCustomerExists = selectedBranchId
+    ? sql`EXISTS (
           SELECT 1 FROM ${bookings} 
           WHERE ${bookings.customerId} = ${customers.id} 
             AND ${bookings.tenantId} = ${access.tenant.id} 
             AND ${bookings.branchId} = ${selectedBranchId}
             AND ${bookings.deletedAt} IS NULL
         )`
-      : undefined
+    : undefined
+
+  // Customer tab search and filter conditions
+  const customerBranchCondition = tab === 'customers' ? branchCustomerExists : undefined
+
+  // Customers with more than one booking at the selected branch.
+  const returningCustomersSub = db
+    .select({ customerId: bookings.customerId })
+    .from(bookings)
+    .where(and(
+      eq(bookings.tenantId, access.tenant.id),
+      selectedBranchId ? eq(bookings.branchId, selectedBranchId) : undefined
+    ))
+    .groupBy(bookings.customerId)
+    .having(sql`count(*) > 1`)
+    .as('returning_sub')
   const branchBookingCondition = selectedBranchId ? eq(bookings.branchId, selectedBranchId) : undefined
 
   const customerSearchCondition =
@@ -214,10 +238,19 @@ export default async function TenantDashboard(props: {
       ? asc(customers.nameNormalized)
       : desc(customers.createdAt)
 
-  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, overrideRows, tenantTranslation, serviceBookingCounts, pendingInviteRows, customerNewThisMonth, customerReturningCount, customerBookingStats, customerWithNotesCount, customerFilteredTotalCount, activeBranchRows] = await Promise.all([
+  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, overrideRows, tenantTranslation, serviceBookingCounts, pendingInviteRows, customerNewThisMonth, customerReturningCount, customerBookingStats, customerWithNotesCount, customerFilteredTotalCount, activeBranchRows, branchServiceAvailabilityRows] = await Promise.all([
     db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')), ...(branchBookingCondition ? [branchBookingCondition] : []))),
-    db.select({ value: count() }).from(customers).where(eq(customers.tenantId, access.tenant.id)),
-    db.select({ value: count() }).from(services).where(and(eq(services.tenantId, access.tenant.id), eq(services.isActive, true))),
+    // Customers on record, scoped to the selected branch when one is active.
+    db.select({ value: count() }).from(customers).where(and(
+      eq(customers.tenantId, access.tenant.id),
+      branchCustomerExists
+    )),
+    // Bookable services: globally active AND not disabled at the selected branch.
+    db.select({ value: count() }).from(services).where(and(
+      eq(services.tenantId, access.tenant.id),
+      eq(services.isActive, true),
+      selectedBranchId ? serviceAvailableAtBranchSql(selectedBranchId) : undefined
+    )),
     db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), eq(bookings.status, 'completed'), gte(bookings.startsAt, startOfMonth), lt(bookings.startsAt, startOfNextMonth), ...(branchBookingCondition ? [branchBookingCondition] : []))),
     db.select({ id: customers.id, name: customers.fullName, phone: customers.phoneE164, email: customers.email, createdAt: customers.createdAt, notes: customers.notes, preferredLocale: customers.preferredLocale })
       .from(customers)
@@ -280,18 +313,16 @@ export default async function TenantDashboard(props: {
     // has access to — one grouped query, no per-row round trip.
     db.select({ serviceId: bookingItems.serviceId, value: count() }).from(bookingItems).where(eq(bookingItems.tenantId, access.tenant.id)).groupBy(bookingItems.serviceId),
     db.select({ staffId: tenantInvitations.staffId }).from(tenantInvitations).where(and(eq(tenantInvitations.tenantId, access.tenant.id), isNull(tenantInvitations.acceptedAt))),
-    // New customers registered this calendar month
-    db.select({ value: count() }).from(customers).where(and(eq(customers.tenantId, access.tenant.id), gte(customers.createdAt, startOfMonth), lt(customers.createdAt, startOfNextMonth), isNull(customers.deletedAt))),
-    // Returning customers = those with >1 booking (each unique customerId in bookings table counted)
-    db.select({ value: count() })
-      .from(
-        db.select({ customerId: bookings.customerId })
-          .from(bookings)
-          .where(eq(bookings.tenantId, access.tenant.id))
-          .groupBy(bookings.customerId)
-          .having(sql`count(*) > 1`)
-          .as('returning_sub')
-      ),
+    // New customers registered this calendar month (and seen at the selected branch)
+    db.select({ value: count() }).from(customers).where(and(
+      eq(customers.tenantId, access.tenant.id),
+      gte(customers.createdAt, startOfMonth),
+      lt(customers.createdAt, startOfNextMonth),
+      isNull(customers.deletedAt),
+      branchCustomerExists
+    )),
+    // Returning customers = those with >1 booking at the selected branch
+    db.select({ value: count() }).from(returningCustomersSub),
     // Per-customer booking count + last booking date, for the rows we just fetched
     // This runs in parallel and is a single grouped query — no N+1.
     db.select({
@@ -300,14 +331,18 @@ export default async function TenantDashboard(props: {
       lastBookingAt: sql<Date>`max(${bookings.startsAt})`,
     })
       .from(bookings)
-      .where(eq(bookings.tenantId, access.tenant.id))
+      .where(and(
+        eq(bookings.tenantId, access.tenant.id),
+        selectedBranchId ? eq(bookings.branchId, selectedBranchId) : undefined
+      ))
       .groupBy(bookings.customerId),
-    // Customers with notes count
+    // Customers with notes count (scoped to the selected branch)
     db.select({ value: count() }).from(customers).where(and(
       eq(customers.tenantId, access.tenant.id),
       isNull(customers.deletedAt),
       isNotNull(customers.notes),
-      sql`length(trim(${customers.notes})) > 0`
+      sql`length(trim(${customers.notes})) > 0`,
+      branchCustomerExists
     )),
     // Filtered customer total for pagination
     db.select({ value: count() })
@@ -338,6 +373,16 @@ export default async function TenantDashboard(props: {
       )
       .where(and(eq(branches.tenantId, access.tenant.id), eq(branches.isActive, true), isNull(branches.archivedAt)))
       .orderBy(desc(branches.isDefault), asc(branches.sortOrder), asc(branches.createdAt)),
+    // Per-branch service availability, for the manual-booking service picker and
+    // the Branches tab. Missing rows are treated as available (migration 0014).
+    db
+      .select({
+        branchId: branchServices.branchId,
+        serviceId: branchServices.serviceId,
+        isAvailable: branchServices.isAvailable,
+      })
+      .from(branchServices)
+      .where(eq(branchServices.tenantId, access.tenant.id)),
   ])
 
   const branchHours = selectedBranchId ? hoursRows.filter((h) => h.branchId === selectedBranchId) : []
@@ -354,6 +399,24 @@ export default async function TenantDashboard(props: {
     name: b.name || b.fallbackName || (rtl ? 'فرع' : 'Branch'),
     isDefault: b.isDefault,
   }))
+
+  // branchId -> ids of services bookable there. A missing availability row is
+  // available, so only explicit `is_available = false` rows remove a service.
+  const unavailableServicePairs = new Set(
+    branchServiceAvailabilityRows
+      .filter((r) => !r.isAvailable)
+      .map((r) => `${r.branchId}:${r.serviceId}`)
+  )
+  const availableServiceIdsByBranch: Record<string, string[]> = {}
+  for (const branch of activeBranchRows) {
+    availableServiceIdsByBranch[branch.id] = serviceRows
+      .filter((s) => !unavailableServicePairs.has(`${branch.id}:${s.id}`))
+      .map((s) => s.id)
+  }
+
+  const selectedBranchName = selectedBranchId
+    ? branchOptions.find((b) => b.id === selectedBranchId)?.name
+    : undefined
 
   const pendingInviteStaffIds = new Set(pendingInviteRows.map((r) => r.staffId))
 
@@ -535,6 +598,7 @@ export default async function TenantDashboard(props: {
     isActive: boolean
     staffCount: number
     todayBookingsCount: number
+    availableServiceIds: string[]
   }> = []
 
   if (tab === 'branches') {
@@ -594,6 +658,7 @@ export default async function TenantDashboard(props: {
       name: b.name || b.fallbackName || (locale === 'ar' ? 'فرع بدون اسم' : 'Unnamed Branch'),
       staffCount: staffCountMap.get(b.id) ?? 0,
       todayBookingsCount: todayCountMap.get(b.id) ?? 0,
+      availableServiceIds: availableServiceIdsByBranch[b.id] ?? [],
     }))
   }
 
@@ -989,10 +1054,10 @@ export default async function TenantDashboard(props: {
         {tab === 'overview' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Stat icon={<CalendarDays className="h-5 w-5" />} label={t.appointments} value={String(todayCount)} hint={rtl ? 'مواعيد اليوم' : 'Scheduled for today'} />
-              <Stat icon={<Users className="h-5 w-5" />} label={t.customers} value={String(customerCount[0]?.value ?? 0)} hint={rtl ? 'إجمالي العملاء المسجّلين' : 'Total customers on record'} />
-              <Stat icon={<ClipboardList className="h-5 w-5" />} label={t.services} value={String(serviceCount[0]?.value ?? 0)} hint={rtl ? 'خدمات متاحة للحجز' : 'Services available to book'} />
-              <Stat icon={<CheckCircle2 className="h-5 w-5" />} label={rtl ? 'مكتملة هذا الشهر' : 'Completed this month'} value={String(completedThisMonth)} hint={rtl ? 'من بداية الشهر الحالي' : 'Since the start of this month'} />
+              <Stat icon={<CalendarDays className="h-5 w-5" />} label={t.appointments} value={String(todayCount)} hint={selectedBranchId ? (rtl ? `مواعيد اليوم في ${selectedBranchName ?? 'هذا الفرع'}` : `Scheduled today at ${selectedBranchName ?? 'this branch'}`) : (rtl ? 'مواعيد اليوم' : 'Scheduled for today')} />
+              <Stat icon={<Users className="h-5 w-5" />} label={t.customers} value={String(customerCount[0]?.value ?? 0)} hint={selectedBranchId ? (rtl ? 'عملاء لديهم حجوزات في هذا الفرع' : 'Customers with bookings at this branch') : (rtl ? 'إجمالي العملاء المسجّلين' : 'Total customers on record')} />
+              <Stat icon={<ClipboardList className="h-5 w-5" />} label={t.services} value={String(serviceCount[0]?.value ?? 0)} hint={selectedBranchId ? (rtl ? 'خدمات متاحة في هذا الفرع' : 'Services available at this branch') : (rtl ? 'خدمات متاحة للحجز' : 'Services available to book')} />
+              <Stat icon={<CheckCircle2 className="h-5 w-5" />} label={rtl ? 'مكتملة هذا الشهر' : 'Completed this month'} value={String(completedThisMonth)} hint={selectedBranchId ? (rtl ? 'مكتملة في هذا الفرع منذ بداية الشهر' : 'Completed at this branch this month') : (rtl ? 'من بداية الشهر الحالي' : 'Since the start of this month')} />
             </div>
 
             {/* Standalone public website link card: identity + copy/open actions.
@@ -1127,6 +1192,7 @@ export default async function TenantDashboard(props: {
                     currency={access.tenant.currency}
                     branches={branchOptions}
                     selectedBranchId={selectedBranchId}
+                    serviceAvailability={availableServiceIdsByBranch}
                     services={serviceRows.map((s) => ({
                       id: s.id,
                       name: s.name || s.fallbackName || (rtl ? 'خدمة' : 'Service'),
@@ -1519,6 +1585,10 @@ export default async function TenantDashboard(props: {
             locale={locale}
             slug={slug}
             branches={branchListRows}
+            services={serviceRows.map((s) => ({
+              id: s.id,
+              name: s.name || s.fallbackName || (rtl ? 'خدمة بدون اسم' : 'Unnamed service'),
+            }))}
             canManage={hasPermission(role, 'branches:manage')}
             canArchive={hasPermission(role, 'branches:archive')}
           />
@@ -1804,19 +1874,11 @@ export default async function TenantDashboard(props: {
               )}
               <a
                 href="?tab=settings&sub=profile"
-                className={sub === 'profile' || (!sub && (role === 'receptionist' || role === 'staff'))
+                className={sub === 'profile' || sub === 'security' || (!searchParams.sub && (role === 'receptionist' || role === 'staff'))
                   ? 'inline-flex items-center gap-2 rounded-xl bg-brand-teal px-3.5 py-2 text-xs font-semibold text-white shadow-xs'
                   : 'inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2 text-xs font-semibold text-ink-muted hover:border-brand-teal hover:text-brand-teal transition'}
               >
                 <span>{locale === 'ar' ? 'الملف الشخصي' : 'Profile'}</span>
-              </a>
-              <a
-                href="?tab=settings&sub=security"
-                className={sub === 'security'
-                  ? 'inline-flex items-center gap-2 rounded-xl bg-brand-teal px-3.5 py-2 text-xs font-semibold text-white shadow-xs'
-                  : 'inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2 text-xs font-semibold text-ink-muted hover:border-brand-teal hover:text-brand-teal transition'}
-              >
-                <span>{locale === 'ar' ? 'الحساب والأمان' : 'Account & Security'}</span>
               </a>
             </div>
 
@@ -1824,7 +1886,7 @@ export default async function TenantDashboard(props: {
               <UserProfileSettings
                 locale={locale}
                 slug={slug}
-                initialSubTab={sub === 'security' ? 'security' : 'general'}
+                initialSubTab={sub === 'security' || sec === 'security' ? 'security' : 'general'}
                 user={{
                   id: access.session.user.id,
                   name:

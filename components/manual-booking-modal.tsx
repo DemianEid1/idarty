@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useMemo } from 'react'
+import { useEffect, useState, useTransition, useMemo } from 'react'
 import { CalendarPlus, Plus, X } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
 import { useToast } from '@/components/toast'
@@ -18,6 +18,8 @@ export interface ManualBookingModalProps {
   }>
   branches?: Array<{ id: string; name: string; isDefault?: boolean }>
   selectedBranchId?: string
+  /** branchId -> service ids bookable there. Omitted means "all services". */
+  serviceAvailability?: Record<string, string[]>
 }
 
 function getDefaultDateTime(): string {
@@ -35,6 +37,7 @@ export function ManualBookingModal({
   services,
   branches,
   selectedBranchId,
+  serviceAvailability,
 }: ManualBookingModalProps) {
   const rtl = locale === 'ar'
   const { toast } = useToast()
@@ -51,11 +54,29 @@ export function ManualBookingModal({
   const [customerNote, setCustomerNote] = useState('')
   const [internalNote, setInternalNote] = useState('')
 
+  // Only services enabled for the selected branch can be booked manually.
+  const availableServices = useMemo(() => {
+    if (!selectedBranchIdState || !serviceAvailability) return services
+    const ids = serviceAvailability[selectedBranchIdState]
+    if (!ids) return services
+    return services.filter((s) => ids.includes(s.id))
+  }, [services, serviceAvailability, selectedBranchIdState])
+
+  useEffect(() => {
+    if (availableServices.length === 0) {
+      if (selectedServiceId) setSelectedServiceId('')
+      return
+    }
+    if (!availableServices.some((s) => s.id === selectedServiceId)) {
+      setSelectedServiceId(availableServices[0].id)
+    }
+  }, [availableServices, selectedServiceId])
+
   function resetForm() {
     setCustomerName('')
     setCustomerPhone('')
     setCustomerEmail('')
-    setSelectedServiceId(services[0]?.id || '')
+    setSelectedServiceId(availableServices[0]?.id || services[0]?.id || '')
     setSelectedBranchIdState(selectedBranchId || branches?.find((b) => b.isDefault)?.id || branches?.[0]?.id || '')
     setStartsAt(getDefaultDateTime())
     setCustomerNote('')
@@ -257,7 +278,7 @@ export function ManualBookingModal({
                       onChange={(e) => setSelectedServiceId(e.target.value)}
                       className="w-full rounded-xl border border-border bg-paper px-3 py-2 text-xs outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal"
                     >
-                      {services.map((s) => (
+                      {availableServices.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name} ({s.durationMin} {rtl ? 'دقيقة' : 'min'} · {s.priceAmount} {currency})
                         </option>
@@ -272,7 +293,13 @@ export function ManualBookingModal({
                       </label>
                       <select
                         value={selectedBranchIdState}
-                        onChange={(e) => setSelectedBranchIdState(e.target.value)}
+                        onChange={(e) => {
+                          const branchId = e.target.value
+                          setSelectedBranchIdState(branchId)
+                          const ids = serviceAvailability?.[branchId]
+                          const next = services.find((s) => !ids || ids.includes(s.id))
+                          setSelectedServiceId(next?.id || '')
+                        }}
                         className="w-full rounded-xl border border-border bg-paper px-3 py-2 text-xs outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal"
                       >
                         {branches.map((b) => (

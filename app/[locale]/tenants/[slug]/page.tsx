@@ -7,6 +7,7 @@ import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
 import { serviceTranslations, services, tenantTranslations, tenants, workingHours, websiteConfig } from '@/lib/db/schema'
 import { shouldShowPublicWorkingHour } from '@/lib/public-hours-policy'
+import { serviceVisibleOnPublicSiteSql } from '@/lib/branch-services'
 import { safeParseWebsiteConfig } from '@/lib/website-config'
 import { toServiceImageProps } from '@/lib/image-focal-point'
 import { TenantWebsite } from '@/components/tenant-website'
@@ -44,7 +45,14 @@ function createTenantPublicCache(slug: string, locale: Locale) {
         }).from(services)
           .leftJoin(serviceTranslations, and(eq(serviceTranslations.serviceId, services.id), eq(serviceTranslations.locale, locale)))
           .leftJoin(fallbackServiceTranslations, and(eq(fallbackServiceTranslations.serviceId, services.id), eq(fallbackServiceTranslations.locale, fallbackLocale)))
-          .where(and(eq(services.tenantId, tenant.id), eq(services.isActive, true), eq(services.isSample, false), isNull(services.deletedAt)))
+          .where(and(
+            eq(services.tenantId, tenant.id),
+            eq(services.isActive, true),
+            eq(services.isSample, false),
+            isNull(services.deletedAt),
+            // Hide services that no active branch can book.
+            serviceVisibleOnPublicSiteSql()
+          ))
           .orderBy(services.sortOrder),
         db.select({ weekday: workingHours.weekday, startTime: workingHours.startTime, endTime: workingHours.endTime, isSample: workingHours.isSample }).from(workingHours).where(and(eq(workingHours.tenantId, tenant.id), isNull(workingHours.staffId))).orderBy(workingHours.weekday),
         db.query.websiteConfig.findFirst({ where: eq(websiteConfig.tenantId, tenant.id) }),
