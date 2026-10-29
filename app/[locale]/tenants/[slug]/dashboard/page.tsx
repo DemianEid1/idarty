@@ -238,7 +238,7 @@ export default async function TenantDashboard(props: {
       ? asc(customers.nameNormalized)
       : desc(customers.createdAt)
 
-  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, overrideRows, tenantTranslation, serviceBookingCounts, pendingInviteRows, customerNewThisMonth, customerReturningCount, customerBookingStats, customerWithNotesCount, customerFilteredTotalCount, activeBranchRows, branchServiceAvailabilityRows] = await Promise.all([
+  const [appointmentCount, customerCount, serviceCount, completedThisMonthCount, customerRows, todayBookings, upcomingBookings, serviceRows, hoursRows, staffRows, overrideRows, tenantTranslation, serviceBookingCounts, pendingInviteRows, customerNewThisMonth, customerReturningCount, customerBookingStats, customerWithNotesCount, customerFilteredTotalCount, activeBranchRows, branchServiceAvailabilityRows, branchAddressCount] = await Promise.all([
     db.select({ value: count() }).from(bookings).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, startOfDay), lt(bookings.startsAt, endOfDay), not(eq(bookings.status, 'cancelled')), ...(branchBookingCondition ? [branchBookingCondition] : []))),
     // Customers on record, scoped to the selected branch when one is active.
     db.select({ value: count() }).from(customers).where(and(
@@ -270,6 +270,7 @@ export default async function TenantDashboard(props: {
     db.select({ id: bookings.id, startsAt: bookings.startsAt, status: bookings.status, name: customers.fullName, branchId: bookings.branchId, branchName: overviewBranchTrans.name, fallbackBranchName: overviewFbBranchTrans.name }).from(bookings).innerJoin(customers, eq(customers.id, bookings.customerId)).leftJoin(overviewBranchTrans, and(eq(overviewBranchTrans.branchId, bookings.branchId), eq(overviewBranchTrans.locale, locale))).leftJoin(overviewFbBranchTrans, and(eq(overviewFbBranchTrans.branchId, bookings.branchId), eq(overviewFbBranchTrans.locale, fallbackLocale))).where(and(eq(bookings.tenantId, access.tenant.id), gte(bookings.startsAt, endOfDay), lt(bookings.startsAt, endOfWeek), not(eq(bookings.status, 'cancelled')), ...(branchBookingCondition ? [branchBookingCondition] : []))).orderBy(bookings.startsAt).limit(10),
     db.select({
       id: services.id,
+      isSample: services.isSample,
       durationMin: services.durationMin,
       priceAmount: services.priceAmount,
       name: serviceTranslations.name,
@@ -295,6 +296,7 @@ export default async function TenantDashboard(props: {
       email: staff.email,
       phone: staff.phoneE164,
       role: staff.role,
+      isSample: staff.isSample,
       membershipId: staff.membershipId,
       userId: memberships.userId,
       ownerUserName: user.name,
@@ -383,6 +385,20 @@ export default async function TenantDashboard(props: {
       })
       .from(branchServices)
       .where(eq(branchServices.tenantId, access.tenant.id)),
+    // Active branches that actually have an address on file. The Getting Started
+    // checklist uses this so "Set your location" reflects persisted data instead
+    // of being assumed.
+    db
+      .select({ value: count() })
+      .from(branchTranslations)
+      .innerJoin(branches, eq(branches.id, branchTranslations.branchId))
+      .where(
+        and(
+          eq(branchTranslations.tenantId, access.tenant.id),
+          isNull(branches.archivedAt),
+          sql`length(trim(coalesce(${branchTranslations.address}, ''))) > 0`
+        )
+      ),
   ])
 
   const branchHours = selectedBranchId ? hoursRows.filter((h) => h.branchId === selectedBranchId) : []
@@ -1019,11 +1035,19 @@ export default async function TenantDashboard(props: {
   const draftWebsiteConfig = websiteConfigRow ? safeParseWebsiteConfig(websiteConfigRow.draft) : null
   const publishedWebsiteConfig = websiteConfigRow?.published ? safeParseWebsiteConfig(websiteConfigRow.published) : null
 
+  // Getting Started measures REAL setup. Sample records created during
+  // onboarding are placeholders, not achievements, so they never tick a step,
+  // and every step is derived from persisted data (no hardcoded `done: true`).
+  const realServiceCount = serviceRows.filter((service) => !service.isSample).length
+  const realStaffCount = staffRows.filter((member) => !member.isSample).length
+  const hasWorkingHours = hoursRows.length > 0
+  const hasBranchAddress = (branchAddressCount[0]?.value ?? 0) > 0
+
   const checklist = [
-    { done: serviceCount[0]?.value > 0, label: rtl ? 'أضف خدمتك الأولى' : 'Add your first service', href: '?tab=services' },
-    { done: staffRows.length > 0, label: rtl ? 'أضف عضو فريق' : 'Add a team member', href: '?tab=team' },
-    { done: hoursRows.length > 0, label: rtl ? 'حدد ساعات العمل' : 'Set working hours', href: '?tab=team' },
-    { done: true, label: rtl ? 'شارك رابط الحجز العام' : 'Share your public booking link', href: `/${locale}/tenants/${slug}` },
+    { done: realServiceCount > 0, label: rtl ? 'أضف خدمتك الأولى' : 'Add your first service', href: '?tab=services' },
+    { done: realStaffCount > 0, label: rtl ? 'أضف عضو فريق' : 'Add a team member', href: '?tab=team' },
+    { done: hasWorkingHours, label: rtl ? 'حدد ساعات العمل' : 'Set working hours', href: '?tab=schedule' },
+    { done: hasBranchAddress, label: rtl ? 'أضف عنوان فرعك' : 'Add your branch address', href: '?tab=branches' },
   ]
 
 

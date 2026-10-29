@@ -9,45 +9,8 @@ import { bookings, branches, branchServices, branchTranslations, services, staff
 import { requireTenantAccess } from '@/lib/authz'
 import { requirePermission } from '@/lib/permissions'
 import { logAudit } from '@/lib/audit'
-
-const e164 = z
-  .string()
-  .trim()
-  .max(30)
-  .transform((v) => {
-    if (!v) return v
-    const cleaned = v.replace(/[\s-]/g, '')
-    if (/^01[0125]\d{8}$/.test(cleaned)) {
-      return '+2' + cleaned
-    }
-    return cleaned
-  })
-  .refine((v) => v === '' || /^\+[1-9]\d{6,14}$/.test(v), {
-    message: 'Phone must be a valid local number or international format (+...)',
-  })
-  .transform((v) => v || undefined)
-
-function slugify(text: string): string {
-  // Transliterate common Arabic letters to Latin equivalents so that
-  // Arabic-named branches get readable slugs instead of random fallbacks.
-  const AR_MAP: Record<string, string> = {
-    'ا':'a','أ':'a','إ':'a','آ':'a','ب':'b','ت':'t','ث':'th','ج':'j','ح':'h','خ':'kh',
-    'د':'d','ذ':'th','ر':'r','ز':'z','س':'s','ش':'sh','ص':'s','ض':'d','ط':'t','ظ':'z',
-    'ع':'a','غ':'gh','ف':'f','ق':'q','ك':'k','ل':'l','م':'m','ن':'n','ه':'h',
-    'و':'w','ي':'y','ى':'a','ة':'a','ء':'','ئ':'y','ؤ':'w','لا':'la',
-  }
-  const transliterated = text
-    .split('')
-    .map((ch) => AR_MAP[ch] ?? ch)
-    .join('')
-  const result = transliterated
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return result || `branch-${Date.now().toString(36)}`
-}
+import { e164Phone as e164 } from '@/lib/phone'
+import { slugifyName as slugify } from '@/lib/slug'
 
 const createBranchSchema = z.object({
   slug: z.string().min(1),

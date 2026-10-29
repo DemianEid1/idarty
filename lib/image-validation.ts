@@ -18,6 +18,16 @@ export const MAX_HERO_IMAGE_SIZE = 2 * 1024 * 1024 // 2MB
 export const MAX_SERVICE_IMAGE_SIZE = 500 * 1024 // 500KB
 
 /**
+ * Maximum decoded size for the workspace logo collected during onboarding.
+ * This is the limit the onboarding UI advertises, so it is enforced server-side
+ * as well — the logo is stored inline in the tenant `theme` JSON.
+ */
+export const MAX_LOGO_IMAGE_SIZE = 1024 * 1024 // 1MB
+
+/** Raw data-URL string bound for the workspace logo (base64 inflation + prefix). */
+export const MAX_LOGO_IMAGE_DATA_URL_LENGTH = Math.ceil(MAX_LOGO_IMAGE_SIZE * (4 / 3)) + 64
+
+/**
  * Upper bound on the raw data-URL STRING length.
  *
  * Base64 inflates a payload by 4/3, plus the `data:image/…;base64,` prefix. The

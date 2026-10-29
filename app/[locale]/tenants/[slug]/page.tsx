@@ -2,10 +2,10 @@ import { ShieldCheck } from 'lucide-react'
 import type { Metadata } from 'next'
 import type { Locale } from '@/lib/i18n'
 import { notFound } from 'next/navigation'
-import { aliasedTable, and, eq, isNull } from 'drizzle-orm'
+import { aliasedTable, and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { unstable_cache } from 'next/cache'
 import { db } from '@/lib/db'
-import { serviceTranslations, services, tenantTranslations, tenants, workingHours, websiteConfig } from '@/lib/db/schema'
+import { branchTranslations, branches, serviceTranslations, services, tenantTranslations, tenants, workingHours, websiteConfig } from '@/lib/db/schema'
 import { shouldShowPublicWorkingHour } from '@/lib/public-hours-policy'
 import { serviceVisibleOnPublicSiteSql } from '@/lib/branch-services'
 import { safeParseWebsiteConfig } from '@/lib/website-config'
@@ -24,7 +24,7 @@ function createTenantPublicCache(slug: string, locale: Locale) {
       const fallbackLocale = locale === 'ar' ? 'en' : 'ar'
       const fallbackServiceTranslations = aliasedTable(serviceTranslations, 'fallback_public_service_translations')
 
-      const [translation, fallbackTranslation, serviceRows, rawHoursRows, publishedConfigRow] = await Promise.all([
+      const [translation, fallbackTranslation, serviceRows, rawHoursRows, publishedConfigRow, branchAddressRows] = await Promise.all([
         db.query.tenantTranslations.findFirst({ where: and(eq(tenantTranslations.tenantId, tenant.id), eq(tenantTranslations.locale, locale)) }),
         db.query.tenantTranslations.findFirst({ where: and(eq(tenantTranslations.tenantId, tenant.id), eq(tenantTranslations.locale, fallbackLocale)) }),
         db.select({
@@ -56,13 +56,29 @@ function createTenantPublicCache(slug: string, locale: Locale) {
           .orderBy(services.sortOrder),
         db.select({ weekday: workingHours.weekday, startTime: workingHours.startTime, endTime: workingHours.endTime, isSample: workingHours.isSample }).from(workingHours).where(and(eq(workingHours.tenantId, tenant.id), isNull(workingHours.staffId))).orderBy(workingHours.weekday),
         db.query.websiteConfig.findFirst({ where: eq(websiteConfig.tenantId, tenant.id) }),
+        // Address fallback: the primary branch's address. Onboarding mirrors the
+        // branch address into the tenant translation, but a workspace that fills
+        // the location in later from the Branches tab must still surface it on the
+        // public site. Tenant-level copy always wins.
+        db
+          .select({ locale: branchTranslations.locale, address: branchTranslations.address })
+          .from(branchTranslations)
+          .innerJoin(branches, eq(branches.id, branchTranslations.branchId))
+          .where(and(eq(branches.tenantId, tenant.id), eq(branches.isActive, true), isNull(branches.archivedAt)))
+          .orderBy(desc(branches.isDefault), asc(branches.sortOrder)),
       ])
       const hoursRows = rawHoursRows.filter((hour) => shouldShowPublicWorkingHour(hour.isSample))
+      const withAddress = branchAddressRows.filter((row) => row.address && row.address.trim())
+      const branchAddress =
+        withAddress.find((row) => row.locale === locale)?.address ??
+        withAddress.find((row) => row.locale === fallbackLocale)?.address ??
+        withAddress[0]?.address ??
+        null
       const publishedConfig = publishedConfigRow?.published
         ? safeParseWebsiteConfig(publishedConfigRow.published)
         : null
 
-      return { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig }
+      return { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig, branchAddress }
     },
     ['tenant-public', slug, locale],
     { revalidate: 60, tags: [`tenant-public-${slug}-${locale}`] }
@@ -119,7 +135,7 @@ export default async function TenantPage({ params }: { params: Promise<{ locale:
   const getTenantData = createTenantPublicCache(slug, locale)
   const data = await getTenantData()
   if (!data) notFound()
-  const { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig } = data
+  const { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig, branchAddress } = data
 
   if (tenant.status === 'suspended') {
     return (
@@ -161,7 +177,7 @@ export default async function TenantPage({ params }: { params: Promise<{ locale:
         name: translation?.name || fallbackTranslation?.name || '',
         tagline: translation?.tagline || fallbackTranslation?.tagline || null,
         description: translation?.description || fallbackTranslation?.description || null,
-        address: translation?.address || fallbackTranslation?.address || null,
+        address: translation?.address || fallbackTranslation?.address || branchAddress || null,
       } : null}
       serviceRows={serviceRows.map((s) => ({
         id: s.id,
