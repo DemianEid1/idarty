@@ -17,7 +17,7 @@ const dashboard = read('app/[locale]/tenants/[slug]/dashboard/page.tsx')
 describe('editor: contact & social surface', () => {
   it('renders the Contact Information panel with all five fields', () => {
     expect(editor).toContain("rtl ? 'معلومات الاتصال' : 'Contact Information'")
-    for (const f of ['phone', 'whatsapp', 'email', 'address', 'googleMapsUrl']) {
+    for (const f of ['phone', 'whatsapp', 'email']) {
       expect(editor, f).toContain(`updateContactField('${f}'`)
     }
   })

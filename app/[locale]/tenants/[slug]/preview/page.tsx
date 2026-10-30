@@ -1,10 +1,11 @@
 import { headers } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
-import { aliasedTable, and, eq, isNull } from 'drizzle-orm'
+import { aliasedTable, and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { serviceTranslations, services, tenantTranslations, tenants, workingHours, websiteConfig } from '@/lib/db/schema'
+import { branchTranslations, branches, serviceTranslations, services, tenantTranslations, tenants, workingHours, websiteConfig } from '@/lib/db/schema'
 import { requireTenantAccess } from '@/lib/authz'
 import { safeParseWebsiteConfig } from '@/lib/website-config'
+import { resolveBranchLocations } from '@/lib/branch-locations'
 import { toServiceImageProps } from '@/lib/image-focal-point'
 import { shouldShowPublicWorkingHour } from '@/lib/public-hours-policy'
 import { TenantWebsite } from '@/components/tenant-website'
@@ -45,7 +46,7 @@ export default async function PreviewPage({
   const fallbackServiceTranslations = aliasedTable(serviceTranslations, 'fallback_preview_service_translations')
 
   // Fetch live data (same as public page)
-  const [translation, fallbackTranslation, serviceRows, rawHoursRows] = await Promise.all([
+  const [translation, fallbackTranslation, serviceRows, rawHoursRows, branchAddressRows] = await Promise.all([
     db.query.tenantTranslations.findFirst({
       where: and(eq(tenantTranslations.tenantId, tenant.id), eq(tenantTranslations.locale, locale)),
     }),
@@ -95,9 +96,23 @@ export default async function PreviewPage({
       .from(workingHours)
       .where(and(eq(workingHours.tenantId, tenant.id), isNull(workingHours.staffId)))
       .orderBy(workingHours.weekday),
+    db
+      .select({
+        branchId: branches.id,
+        isDefault: branches.isDefault,
+        locale: branchTranslations.locale,
+        name: branchTranslations.name,
+        address: branchTranslations.address,
+        googleMapsUrl: branches.googleMapsUrl,
+      })
+      .from(branchTranslations)
+      .innerJoin(branches, eq(branches.id, branchTranslations.branchId))
+      .where(and(eq(branches.tenantId, tenant.id), eq(branches.isActive, true), isNull(branches.archivedAt)))
+      .orderBy(desc(branches.isDefault), asc(branches.sortOrder)),
   ])
 
   const hoursRows = rawHoursRows.filter((hour) => shouldShowPublicWorkingHour(hour.isSample))
+  const branchLocations = resolveBranchLocations(branchAddressRows, locale)
   const effectiveTranslation = translation || fallbackTranslation
 
   return (
@@ -134,6 +149,7 @@ export default async function PreviewPage({
         startTime: h.startTime,
         endTime: h.endTime,
       }))}
+      branches={branchLocations}
       config={draftConfig}
     />
   )

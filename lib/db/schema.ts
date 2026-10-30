@@ -137,6 +137,7 @@ export const branches = pgTable('branches', {
   sortOrder: integer('sort_order').notNull().default(0),
   phoneE164: text('phone_e164'),
   email: text('email'),
+  googleMapsUrl: text('google_maps_url'),
   bookingCapacity: integer('booking_capacity').notNull().default(1),
   createdAt: tsz('created_at').notNull().defaultNow(),
   updatedAt: tsz('updated_at').notNull().defaultNow(),

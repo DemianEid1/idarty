@@ -35,6 +35,7 @@ export type BranchData = {
   description?: string | null
   phone?: string | null
   email?: string | null
+  googleMapsUrl?: string | null
   bookingCapacity: number
   isDefault: boolean
   isActive: boolean
@@ -186,6 +187,19 @@ export function BranchesTab({
                         <div className="flex items-center gap-2 text-[#374151]">
                           <MapPin className="h-3.5 w-3.5 shrink-0 text-brand-teal" />
                           <span className="truncate">{b.address}</span>
+                        </div>
+                      )}
+                      {b.googleMapsUrl && (
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={b.googleMapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-teal hover:underline"
+                          >
+                            <MapPin className="h-3.5 w-3.5 shrink-0" />
+                            <span>{rtl ? 'عرض الموقع على خرائط جوجل' : 'View on Google Maps'}</span>
+                          </a>
                         </div>
                       )}
                       {b.phone && (
@@ -499,6 +513,25 @@ function BranchModal({
                   placeholder={rtl ? 'شارع النصر، المعادي، القاهرة' : 'Victory Street, Maadi, Cairo'}
                   className="w-full rounded-xl border border-border bg-paper px-3 py-2 text-xs outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal"
                 />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="font-medium text-[#374151]">
+                  {rtl ? 'رابط خرائط جوجل' : 'Google Maps Link'}
+                </label>
+                <input
+                  name="googleMapsUrl"
+                  type="url"
+                  dir="ltr"
+                  defaultValue={branch?.googleMapsUrl ?? ''}
+                  placeholder="https://maps.app.goo.gl/..."
+                  className="w-full rounded-xl border border-border bg-paper px-3 py-2 text-xs outline-none focus:border-brand-teal focus:ring-1 focus:ring-brand-teal text-left"
+                />
+                <p className="text-[11px] text-ink-muted">
+                  {rtl
+                    ? 'رابط مباشر لموقع الفرع على خرائط جوجل يظهر للعملاء على موقعك.'
+                    : 'Direct Google Maps location link shown to customers on your website.'}
+                </p>
               </div>
 
               <div className="space-y-1">

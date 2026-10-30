@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, CalendarDays, Mail, MapPin, Phone } from 'lucide-react'
+import { ArrowRight, CalendarDays, Mail, Phone } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
 import {
   toTelHref,
@@ -107,19 +107,12 @@ export function ContactSection({
   const phoneVisible = contact.phone.isVisible && contact.phone.value.trim() !== ''
   const whatsappVisible = contact.whatsapp.isVisible && contact.whatsapp.value.trim() !== ''
   const emailVisible = contact.email.isVisible && contact.email.value.trim() !== ''
-  const addressVisible = contact.address.isVisible && contact.address.value.trim() !== ''
-  const mapsVisible = contact.googleMapsUrl.isVisible && contact.googleMapsUrl.value.trim() !== ''
 
   const telHref = phoneVisible ? toTelHref(contact.phone.value) : null
   const waHref = whatsappVisible ? toWhatsAppHref(contact.whatsapp.value) : null
   const mailHref = emailVisible ? toMailto(contact.email.value) : null
-  // Independent guard: only a safe http(s) URL becomes a Maps link.
-  const mapsHref = mapsVisible && isHttpUrl(contact.googleMapsUrl.value)
-    ? contact.googleMapsUrl.value.trim()
-    : null
 
-  const hasAny =
-    phoneVisible || whatsappVisible || emailVisible || addressVisible || mapsVisible
+  const hasAny = phoneVisible || whatsappVisible || emailVisible
   // The Main CTA is rendered by this section, so the section must survive even
   // when every contact field is hidden — otherwise configuring a CTA with no
   // contact details would silently drop it from the site entirely.
@@ -167,41 +160,11 @@ export function ContactSection({
                 <PlainDetail icon={<Mail className="h-5 w-5" />} text={contact.email.value} />
               ))}
 
-            {mapsVisible &&
-              (mapsHref ? (
-                <ActionButton href={mapsHref} label={rtl ? 'الموقع على الخريطة' : 'View on map'} external>
-                  <MapPin className="h-5 w-5" />
-                </ActionButton>
-              ) : null)}
+
           </div>
 
-          {/* Details + social */}
-          <div className="space-y-4">
-            {/* Address. When a valid Google Maps URL is configured the address
-                becomes a link to it; otherwise it stays plain text. A hidden
-                address is never rendered. */}
-            {addressVisible &&
-              (mapsHref ? (
-                <a
-                  href={mapsHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex max-w-full items-start gap-2.5 text-base text-[#6f7b90] outline-none transition-colors duration-150 hover:text-[var(--site-primary)] focus-visible:ring-2 focus-visible:ring-[var(--site-primary)] focus-visible:ring-offset-2 cursor-pointer"
-                >
-                  <span className="mt-0.5 shrink-0 text-[var(--site-primary)]" aria-hidden="true">
-                    <MapPin className="h-5 w-5" />
-                  </span>
-                  <span className="min-w-0 break-words">{contact.address.value}</span>
-                </a>
-              ) : (
-                <div className="flex max-w-full items-start gap-2.5 text-base text-[#6f7b90]">
-                  <span className="mt-0.5 shrink-0 text-[var(--site-primary)]" aria-hidden="true">
-                    <MapPin className="h-5 w-5" />
-                  </span>
-                  <span className="min-w-0 break-words">{contact.address.value}</span>
-                </div>
-              ))}
-
+          {/* Social links */}
+          <div className="flex items-center">
             <SocialLinks locale={locale} social={social} size={22} />
           </div>
         </div>

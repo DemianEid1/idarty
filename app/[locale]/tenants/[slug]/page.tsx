@@ -9,6 +9,7 @@ import { branchTranslations, branches, serviceTranslations, services, tenantTran
 import { shouldShowPublicWorkingHour } from '@/lib/public-hours-policy'
 import { serviceVisibleOnPublicSiteSql } from '@/lib/branch-services'
 import { safeParseWebsiteConfig } from '@/lib/website-config'
+import { resolveBranchLocations } from '@/lib/branch-locations'
 import { toServiceImageProps } from '@/lib/image-focal-point'
 import { TenantWebsite } from '@/components/tenant-website'
 import { LocaleSwitchLink } from '@/components/locale-switcher'
@@ -61,7 +62,14 @@ function createTenantPublicCache(slug: string, locale: Locale) {
         // the location in later from the Branches tab must still surface it on the
         // public site. Tenant-level copy always wins.
         db
-          .select({ locale: branchTranslations.locale, address: branchTranslations.address })
+          .select({
+            branchId: branches.id,
+            isDefault: branches.isDefault,
+            locale: branchTranslations.locale,
+            name: branchTranslations.name,
+            address: branchTranslations.address,
+            googleMapsUrl: branches.googleMapsUrl,
+          })
           .from(branchTranslations)
           .innerJoin(branches, eq(branches.id, branchTranslations.branchId))
           .where(and(eq(branches.tenantId, tenant.id), eq(branches.isActive, true), isNull(branches.archivedAt)))
@@ -74,11 +82,12 @@ function createTenantPublicCache(slug: string, locale: Locale) {
         withAddress.find((row) => row.locale === fallbackLocale)?.address ??
         withAddress[0]?.address ??
         null
+      const branchLocations = resolveBranchLocations(branchAddressRows, locale)
       const publishedConfig = publishedConfigRow?.published
         ? safeParseWebsiteConfig(publishedConfigRow.published)
         : null
 
-      return { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig, branchAddress }
+      return { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig, branchAddress, branchLocations }
     },
     ['tenant-public', slug, locale],
     { revalidate: 60, tags: [`tenant-public-${slug}-${locale}`] }
@@ -135,7 +144,7 @@ export default async function TenantPage({ params }: { params: Promise<{ locale:
   const getTenantData = createTenantPublicCache(slug, locale)
   const data = await getTenantData()
   if (!data) notFound()
-  const { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig, branchAddress } = data
+  const { tenant, translation, fallbackTranslation, serviceRows, hoursRows, publishedConfig, branchAddress, branchLocations } = data
 
   if (tenant.status === 'suspended') {
     return (
@@ -192,6 +201,7 @@ export default async function TenantPage({ params }: { params: Promise<{ locale:
         startTime: h.startTime,
         endTime: h.endTime,
       }))}
+      branches={branchLocations}
       config={publishedConfig}
     />
   )

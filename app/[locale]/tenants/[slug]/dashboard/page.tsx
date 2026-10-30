@@ -609,6 +609,7 @@ export default async function TenantDashboard(props: {
     description?: string | null
     phone?: string | null
     email?: string | null
+    googleMapsUrl?: string | null
     bookingCapacity: number
     isDefault: boolean
     isActive: boolean
@@ -629,6 +630,7 @@ export default async function TenantDashboard(props: {
         description: branchTranslations.description,
         phone: branches.phoneE164,
         email: branches.email,
+        googleMapsUrl: branches.googleMapsUrl,
         bookingCapacity: branches.bookingCapacity,
         isDefault: branches.isDefault,
         isActive: branches.isActive,

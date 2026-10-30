@@ -109,8 +109,8 @@ function configWith(opts: {
   })
 }
 
-const renderSite = (config: WebsiteConfig | null, locale: 'ar' | 'en' = 'ar') =>
-  flatten(TenantWebsite({ ...baseProps, locale, config }))
+const renderSite = (config: WebsiteConfig | null, locale: 'ar' | 'en' = 'ar', branches?: any[]) =>
+  flatten(TenantWebsite({ ...baseProps, locale, config, branches }))
 
 const whatsappLinks = (nodes: Node[]) =>
   nodes.filter((n) => n.platform === 'whatsapp' && typeof n.href === 'string')
@@ -210,17 +210,19 @@ describe('WhatsApp icon — regression coverage', () => {
 // 2. Address → Google Maps link
 // ---------------------------------------------------------------------------
 
-describe('Business address → Google Maps link', () => {
-  const withAddress = (maps: string, visible = true) =>
-    configWith({
-      contact: {
-        address: field('١٢ شارع النيل، القاهرة'),
-        googleMapsUrl: field(maps, visible),
-      },
-    })
+describe('Branch locations → Google Maps link', () => {
+  const branchWithMaps = (maps: string | null) => [
+    {
+      id: 'b1',
+      name: 'فرع المعادي',
+      address: '١٢ شارع النيل، القاهرة',
+      googleMapsUrl: maps,
+      isDefault: true,
+    },
+  ]
 
-  it('makes the address a link when a valid Maps URL is configured', () => {
-    const nodes = renderSite(withAddress('https://maps.app.goo.gl/abc123'))
+  it('makes the Google Maps action a link when a valid Maps URL is configured for a branch', () => {
+    const nodes = renderSite(configWith({}), 'ar', branchWithMaps('https://maps.app.goo.gl/abc123'))
     const link = nodes.find((n) => n.href === 'https://maps.app.goo.gl/abc123')
     expect(link).toBeDefined()
     expect(link?.target).toBe('_blank')
@@ -228,54 +230,25 @@ describe('Business address → Google Maps link', () => {
     expect(link?.rel).toContain('noreferrer')
   })
 
-  it('renders the address as plain text when the Maps URL is missing', () => {
-    const nodes = renderSite(withAddress(''))
-    expect(nodes.some((n) => n.href === '' || n.href === undefined)).toBe(true)
-    // No map link anywhere.
+  it('renders the branch card without a map link when the Maps URL is missing', () => {
+    const nodes = renderSite(configWith({}), 'ar', branchWithMaps(null))
     expect(nodes.some((n) => typeof n.href === 'string' && n.href.includes('maps'))).toBe(false)
   })
 
-  it('renders the address as plain text when the Maps URL is invalid', () => {
-    const nodes = renderSite(withAddress('javascript:alert(1)'))
+  it('renders the branch card without a map link when the Maps URL is invalid', () => {
+    const nodes = renderSite(configWith({}), 'ar', branchWithMaps('javascript:alert(1)'))
     expect(nodes.some((n) => typeof n.href === 'string' && n.href.startsWith('javascript:'))).toBe(
       false
     )
   })
 
-  it('never exposes a hidden address as text or link', () => {
-    const nodes = renderSite(
-      configWith({
-        contact: {
-          address: field('١٢ شارع النيل، القاهرة', false),
-          googleMapsUrl: field('https://maps.app.goo.gl/abc123'),
-        },
-      })
-    )
-    // Collect every string reachable from the tree (JSON.stringify would choke
-    // on the circular React element references).
-    const collectText = (v: unknown, depth = 0, out: string[] = []): string[] => {
-      if (depth > 40 || v === null || v === undefined) return out
-      if (typeof v === 'string' || typeof v === 'number') {
-        out.push(String(v))
-        return out
-      }
-      if (Array.isArray(v)) {
-        for (const c of v) collectText(c, depth + 1, out)
-        return out
-      }
-      if (typeof v === 'object') {
-        const el = v as { props?: Record<string, unknown> }
-        if (el.props) collectText(el.props.children, depth + 1, out)
-      }
-      return out
-    }
-    const text = collectText(nodes).join(' ')
-    expect(text).not.toContain('شارع النيل')
+  it('renders nothing in branch locations when branches list is empty', () => {
+    const nodes = renderSite(configWith({}), 'ar', [])
     expect(nodes.some((n) => typeof n.href === 'string' && n.href.includes('maps'))).toBe(false)
   })
 
   it('keeps RTL markup correct (Arabic label present, no LTR leakage)', () => {
-    const nodes = renderSite(withAddress('https://maps.app.goo.gl/abc123'), 'ar')
+    const nodes = renderSite(configWith({}), 'ar', branchWithMaps('https://maps.app.goo.gl/abc123'))
     const link = nodes.find((n) => n.href === 'https://maps.app.goo.gl/abc123')
     expect(link).toBeDefined()
   })

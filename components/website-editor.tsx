@@ -772,12 +772,6 @@ export function WebsiteEditor({
       { key: 'phone', label: rtl ? 'هاتف' : 'Phone', field: config.contact.phone },
       { key: 'whatsapp', label: rtl ? 'واتساب' : 'WhatsApp', field: config.contact.whatsapp },
       { key: 'email', label: rtl ? 'بريد' : 'Email', field: config.contact.email },
-      { key: 'address', label: rtl ? 'عنوان' : 'Address', field: config.contact.address },
-      {
-        key: 'maps',
-        label: rtl ? 'خرائط' : 'Maps',
-        field: config.contact.googleMapsUrl,
-      },
     ] as const
   )
     .filter(({ field }) => field.isVisible && field.value.trim() !== '')
@@ -1431,39 +1425,7 @@ export function WebsiteEditor({
             onToggle={() => updateContactField('email', { isVisible: !config.contact.email.isVisible })}
           />
 
-          {/* Address */}
-          <ContactFieldRow
-            rtl={rtl}
-            label={rtl ? 'العنوان' : 'Business address'}
-            value={config.contact.address.value}
-            isVisible={config.contact.address.isVisible}
-            maxLength={CONTACT_PRACTICAL_LIMITS.address}
-            issue={issueFor('contact.address.value')}
-            locale={locale}
-            onValue={(v) => updateContactField('address', { value: v })}
-            onToggle={() => updateContactField('address', { isVisible: !config.contact.address.isVisible })}
-          />
 
-          {/* Google Maps */}
-          <ContactFieldRow
-            rtl={rtl}
-            label={rtl ? 'رابط خرائط جوجل' : 'Google Maps link'}
-            value={config.contact.googleMapsUrl.value}
-            isVisible={config.contact.googleMapsUrl.isVisible}
-            maxLength={CONTACT_PRACTICAL_LIMITS.googleMapsUrl}
-            warning={
-              config.contact.googleMapsUrl.value.trim() !== '' &&
-              !isHttpUrl(config.contact.googleMapsUrl.value)
-                ? URL_INVALID_HINT[locale]
-                : undefined
-            }
-            issue={issueFor('contact.googleMapsUrl.value')}
-            locale={locale}
-            onValue={(v) => updateContactField('googleMapsUrl', { value: v })}
-            onToggle={() =>
-              updateContactField('googleMapsUrl', { isVisible: !config.contact.googleMapsUrl.isVisible })
-            }
-          />
         </div>
         </>
       ), (

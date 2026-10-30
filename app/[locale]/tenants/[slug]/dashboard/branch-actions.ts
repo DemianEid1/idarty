@@ -21,6 +21,7 @@ const createBranchSchema = z.object({
   description: z.string().trim().max(500).optional().or(z.literal('')),
   phone: e164.optional(),
   email: z.string().email().optional().or(z.literal('')),
+  googleMapsUrl: z.string().trim().max(1000).optional().or(z.literal('')),
   bookingCapacity: z.coerce.number().int().min(1).default(1),
   isDefault: z.coerce.boolean().default(false),
 })
@@ -36,6 +37,7 @@ export async function createBranch(formData: FormData) {
     description: formData.get('description') || '',
     phone: formData.get('phone') || '',
     email: formData.get('email') || '',
+    googleMapsUrl: formData.get('googleMapsUrl') || '',
     bookingCapacity: formData.get('bookingCapacity') || 1,
     isDefault: formData.get('isDefault') === 'true' || formData.get('isDefault') === 'on',
   })
@@ -68,6 +70,7 @@ export async function createBranch(formData: FormData) {
         slug: finalSlug,
         phoneE164: input.phone || null,
         email: input.email || null,
+        googleMapsUrl: input.googleMapsUrl ? input.googleMapsUrl.trim() : null,
         bookingCapacity: input.bookingCapacity,
         isDefault: input.isDefault,
         isActive: true,
@@ -135,6 +138,7 @@ const updateBranchSchema = z.object({
   description: z.string().trim().max(500).optional().or(z.literal('')),
   phone: e164.optional(),
   email: z.string().email().optional().or(z.literal('')),
+  googleMapsUrl: z.string().trim().max(1000).optional().or(z.literal('')),
   bookingCapacity: z.coerce.number().int().min(1).default(1),
   isActive: z.coerce.boolean().default(true),
   isDefault: z.coerce.boolean().default(false),
@@ -151,6 +155,7 @@ export async function updateBranch(formData: FormData) {
     description: formData.get('description') || '',
     phone: formData.get('phone') || '',
     email: formData.get('email') || '',
+    googleMapsUrl: formData.get('googleMapsUrl') || '',
     bookingCapacity: formData.get('bookingCapacity') || 1,
     isActive: formData.get('isActive') !== 'false',
     isDefault: formData.get('isDefault') === 'true' || formData.get('isDefault') === 'on',
@@ -183,6 +188,7 @@ export async function updateBranch(formData: FormData) {
       .set({
         phoneE164: input.phone || null,
         email: input.email || null,
+        googleMapsUrl: input.googleMapsUrl ? input.googleMapsUrl.trim() : null,
         bookingCapacity: input.bookingCapacity,
         isActive: input.isActive,
         isDefault: input.isDefault || existing.isDefault, // preserve default if was default

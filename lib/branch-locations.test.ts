@@ -69,19 +69,35 @@ function collect(node: unknown, out: Array<{ props: any }> = [], depth = 0) {
   return out
 }
 
-describe('branch addresses section', () => {
-  it('is hidden unless the website config explicitly enables it', () => {
-    // The component renders from config, not a branches prop.
-    // A default config does not include branch location cards.
+const testBranches = [
+  {
+    id: 'b1',
+    name: 'الفرع الرئيسي',
+    address: 'شارع ١',
+    googleMapsUrl: 'https://maps.app.goo.gl/abc',
+    isDefault: true,
+  },
+  { id: 'b2', name: 'فرع سموحة', address: 'شارع ٢', googleMapsUrl: null, isDefault: false },
+]
+
+describe('branch locations section', () => {
+  it('is hidden when no branches are provided', () => {
     const config = createDefaultWebsiteConfig()
-    const els = collect(TenantWebsite({ ...baseProps, config }))
+    const els = collect(TenantWebsite({ ...baseProps, branches: [], config }))
     expect(els.some((e) => e.props['data-testid'] === 'branch-locations')).toBe(false)
   })
 
-  it('smoke-tests that the TenantWebsite component renders without errors', () => {
-    // Full branch-address card rendering will be verified once the locations
-    // section is wired into the component. For now, confirm it renders at all.
-    const result = TenantWebsite({ ...baseProps, config: createDefaultWebsiteConfig() })
-    expect(result).toBeTruthy()
+  it('renders every branch card and clickable Google Maps link when branches are provided', () => {
+    const config = createDefaultWebsiteConfig()
+    const els = collect(TenantWebsite({ ...baseProps, branches: testBranches, config }))
+    expect(els.some((e) => e.props['data-testid'] === 'branch-locations')).toBe(true)
+    const cards = els.filter((e) => e.props['data-testid'] === 'branch-location-card')
+    expect(cards).toHaveLength(2)
+
+    // The branch with Google Maps URL renders an external link to it
+    const mapsLinks = els.filter((e) => e.props.href === 'https://maps.app.goo.gl/abc')
+    expect(mapsLinks).toHaveLength(1)
+    expect(mapsLinks[0].props.target).toBe('_blank')
+    expect(mapsLinks[0].props.rel).toContain('noopener')
   })
 })

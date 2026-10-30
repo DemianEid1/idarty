@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { ArrowRight, CalendarDays, Clock3, Mail, MapPin, Phone, Sparkles } from 'lucide-react'
+import { ArrowRight, Building2, CalendarDays, Clock3, ExternalLink, Mail, MapPin, Phone, Sparkles, Star } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
+import type { BranchLocation } from '@/lib/branch-locations'
 import { resolveOrderedSectionTypes, resolveSiteBackground, type WebsiteConfig } from '@/lib/website-config'
 import { focalPointToCss, resolveFocalPoint, type FocalPoint } from '@/lib/image-focal-point'
 import { cropToLayerStyle, resolveCrop } from '@/lib/image-crop'
@@ -76,6 +77,7 @@ export interface TenantWebsiteProps {
   } | null
   serviceRows: TenantWebsiteService[]
   hoursRows: TenantWebsiteHours[]
+  branches?: BranchLocation[]
   config: WebsiteConfig | null
   /**
    * Optional banner rendered above the header inside the SAME sticky region.
@@ -99,6 +101,7 @@ export function TenantWebsite({
   translation,
   serviceRows,
   hoursRows,
+  branches,
   config,
   previewBanner,
   localeSwitch,
@@ -577,6 +580,92 @@ export function TenantWebsite({
     </section>
   )
 
+  const renderBranchLocations = () => {
+    if (!branches || branches.length === 0) return null
+
+    return (
+      <section
+        id="branches"
+        key="branches"
+        className="border-t border-[#eef0f4] py-16 sm:py-24"
+        data-testid="branch-locations"
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="mb-12 text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-[#172033] break-words sm:text-4xl">
+              {rtl ? 'فروعنا' : 'Our Locations'}
+            </h2>
+            <p className="mt-3 text-base text-[#6f7b90] max-w-2xl mx-auto break-words">
+              {rtl
+                ? 'تفضل بزيارة أقرب فرع لك أو تصفح مواقعنا والوصول إليها بسهولة عبر خرائط جوجل.'
+                : 'Visit your nearest branch or get directions easily via Google Maps.'}
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {branches.map((b) => {
+              const hasMapsUrl = b.googleMapsUrl && isHttpUrl(b.googleMapsUrl)
+              const mapsHref = hasMapsUrl ? b.googleMapsUrl!.trim() : null
+
+              return (
+                <div
+                  key={b.id}
+                  data-testid="branch-location-card"
+                  className="group relative flex flex-col justify-between rounded-3xl border border-[#e8ebf1] bg-paper p-6 shadow-xs transition-all duration-200 hover:border-[var(--site-primary)]/40 hover:shadow-md"
+                >
+                  <div>
+                    {/* Header: Icon + Default Badge */}
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <span
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--site-primary)]/10 text-[var(--site-primary)] transition-transform duration-200 group-hover:scale-105"
+                        aria-hidden="true"
+                      >
+                        <Building2 className="h-5 w-5" />
+                      </span>
+                      {b.isDefault && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 border border-amber-200/60">
+                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                          <span>{rtl ? 'الفرع الرئيسي' : 'Main Branch'}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Branch Name */}
+                    <h3 className="text-lg font-bold text-[#172033] break-words">
+                      {b.name || (rtl ? 'الفرع' : 'Branch')}
+                    </h3>
+
+                    {/* Branch Address */}
+                    <div className="mt-3 flex items-start gap-2.5 text-sm text-[#4b5563]">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[var(--site-primary)]" aria-hidden="true" />
+                      <span className="leading-relaxed break-words">{b.address}</span>
+                    </div>
+                  </div>
+
+                  {/* Google Maps Action Button / Link */}
+                  {mapsHref && (
+                    <div className="mt-6 pt-4 border-t border-[#f0f2f6]">
+                      <a
+                        href={mapsHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--site-primary)] px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition-all duration-150 hover:opacity-90 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
+                      >
+                        <MapPin className="h-4 w-4" aria-hidden="true" />
+                        <span>{rtl ? 'عرض على خرائط جوجل' : 'View on Google Maps'}</span>
+                        <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden="true" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   const renderContact = () => {
     const contactSection = configuredSections?.find((s) => s.type === 'contact')
     const contactAr = contactSection?.content?.ar ?? {}
@@ -613,6 +702,8 @@ export function TenantWebsite({
   const SECTION_RENDERERS: Record<string, () => React.ReactNode> = {
     hero: renderHero,
     services: renderServices,
+    locations: renderBranchLocations,
+    branches: renderBranchLocations,
     contact: renderContact,
   }
 
@@ -678,6 +769,14 @@ export function TenantWebsite({
                   {rtl ? 'الخدمات' : 'Services'}
                 </a>
               )}
+              {branches && branches.length > 0 && (
+                <a
+                  href="#branches"
+                  className="hidden text-sm font-medium text-[#647087] transition-colors duration-150 hover:text-[var(--site-primary)] sm:inline-block cursor-pointer"
+                >
+                  {rtl ? 'فروعنا' : 'Locations'}
+                </a>
+              )}
               {/* Social links: desktop only. The header is already dense on
                   mobile (brand + locale switch + CTA), so these are hidden below
                   `sm` rather than competing for space. WhatsApp is a contact
@@ -714,8 +813,16 @@ export function TenantWebsite({
         </header>
       </div>
 
-      {/* Sections in configured order */}
-      {orderedTypes.map((type) => SECTION_RENDERERS[type]?.())}
+      {/* Sections in configured order with Branch Locations before Contact */}
+      {orderedTypes.flatMap((type) => {
+        const node = SECTION_RENDERERS[type]?.()
+        if (type === 'contact' && !orderedTypes.includes('locations') && !orderedTypes.includes('branches')) {
+          const locs = renderBranchLocations()
+          return locs ? [locs, node] : [node]
+        }
+        return [node]
+      })}
+      {!orderedTypes.includes('contact') && !orderedTypes.includes('locations') && !orderedTypes.includes('branches') && renderBranchLocations()}
 
       {/* Footer — three layers:
             A. contact information (address / phone / email), each shown only
