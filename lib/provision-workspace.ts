@@ -180,6 +180,7 @@ export async function provisionWorkspace(
     .values({
       tenantId: createdTenant.id,
       membershipId: ownerMembership.id,
+      role: 'owner' as const,
       email: actor.email,
       sortOrder: 0,
       isSample: true,

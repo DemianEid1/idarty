@@ -295,7 +295,7 @@ export default async function TenantDashboard(props: {
       fallbackName: fallbackStaffTranslations.name,
       email: staff.email,
       phone: staff.phoneE164,
-      role: staff.role,
+      role: sql<string>`COALESCE(${memberships.role}, ${staff.role})`.as('role'),
       isSample: staff.isSample,
       membershipId: staff.membershipId,
       userId: memberships.userId,
