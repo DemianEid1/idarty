@@ -105,8 +105,18 @@ function fullConfig() {
   })
 }
 
-const render = (config: WebsiteConfig | null, locale: 'ar' | 'en' = 'ar') =>
-  flatten(TenantWebsite({ ...baseProps, locale, config }))
+const defaultBranches = [
+  {
+    id: 'b1',
+    name: 'الفرع الرئيسي',
+    address: 'شارع النيل',
+    googleMapsUrl: 'https://maps.google.com/?q=bebo',
+    isDefault: true,
+  },
+]
+
+const render = (config: WebsiteConfig | null, locale: 'ar' | 'en' = 'ar', branches = defaultBranches) =>
+  flatten(TenantWebsite({ ...baseProps, locale, config, branches }))
 
 const links = (nodes: Node[]) => nodes.filter((n) => typeof n.href === 'string' && n.href.length > 0)
 

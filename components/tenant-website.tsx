@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowRight, Building2, CalendarDays, Clock3, ExternalLink, Mail, MapPin, Phone, Sparkles, Star } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Building2, CalendarDays, Clock3, Compass, ExternalLink, Mail, MapPin, Navigation, Phone, Sparkles, Star } from 'lucide-react'
 import type { Locale } from '@/lib/i18n'
 import type { BranchLocation } from '@/lib/branch-locations'
 import { resolveOrderedSectionTypes, resolveSiteBackground, type WebsiteConfig } from '@/lib/website-config'
@@ -297,16 +297,6 @@ export function TenantWebsite({
       : null
 
   const footerContactItems = [
-    footerAddress
-      ? {
-          key: 'address',
-          icon: MapPin,
-          label: rtl ? 'العنوان' : 'Address',
-          value: footerAddress,
-          href: footerMapsHref,
-          external: !!footerMapsHref,
-        }
-      : null,
     footerPhoneValue ? { key: 'phone', icon: Phone, label: rtl ? 'الهاتف' : 'Phone', value: footerPhoneValue, href: footerPhoneHref, external: false } : null,
     footerEmailValue ? { key: 'email', icon: Mail, label: rtl ? 'البريد الإلكتروني' : 'Email', value: footerEmailValue, href: footerEmailHref, external: false } : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null)
@@ -587,21 +577,27 @@ export function TenantWebsite({
       <section
         id="branches"
         key="branches"
-        className="border-t border-[#eef0f4] py-16 sm:py-24"
+        className="relative border-t border-[#edf0f5] bg-gradient-to-b from-[#f8fafc]/90 to-surface/40 py-16 sm:py-24"
         data-testid="branch-locations"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="mb-12 text-center">
-            <h2 className="text-3xl font-bold tracking-tight text-[#172033] break-words sm:text-4xl">
-              {rtl ? 'فروعنا' : 'Our Locations'}
+          {/* Section Header */}
+          <div className="mb-12 text-center sm:mb-16">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--site-primary)]/20 bg-[var(--site-primary)]/10 px-3.5 py-1 text-xs font-semibold text-[var(--site-primary)] shadow-xs">
+              <Compass className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{rtl ? 'فروعنا المتاحة' : 'Our Branch Network'}</span>
+            </div>
+            <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-[#172033] break-words sm:text-4xl">
+              {rtl ? 'تفضل بزيارة فروعنا' : 'Visit Our Locations'}
             </h2>
-            <p className="mt-3 text-base text-[#6f7b90] max-w-2xl mx-auto break-words">
+            <p className="mt-3 text-base text-[#64748b] max-w-2xl mx-auto break-words leading-relaxed">
               {rtl
-                ? 'تفضل بزيارة أقرب فرع لك أو تصفح مواقعنا والوصول إليها بسهولة عبر خرائط جوجل.'
-                : 'Visit your nearest branch or get directions easily via Google Maps.'}
+                ? 'يسعدنا استقبالكم في أي من مواقعنا. اختر الفرع الأقرب إليك واحصل على الاتجاهات الدقيقة عبر خرائط جوجل.'
+                : 'We are delighted to welcome you at any of our venues. Choose the nearest location and get precise turn-by-turn directions.'}
             </p>
           </div>
 
+          {/* Cards Grid */}
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {branches.map((b) => {
               const hasMapsUrl = b.googleMapsUrl && isHttpUrl(b.googleMapsUrl)
@@ -611,49 +607,66 @@ export function TenantWebsite({
                 <div
                   key={b.id}
                   data-testid="branch-location-card"
-                  className="group relative flex flex-col justify-between rounded-3xl border border-[#e8ebf1] bg-paper p-6 shadow-xs transition-all duration-200 hover:border-[var(--site-primary)]/40 hover:shadow-md"
+                  className="group relative flex flex-col justify-between rounded-3xl border border-[#e2e8f0] bg-paper p-6 sm:p-7 shadow-xs transition-all duration-300 hover:-translate-y-1 hover:border-[var(--site-primary)]/50 hover:shadow-xl"
                 >
                   <div>
-                    {/* Header: Icon + Default Badge */}
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <span
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--site-primary)]/10 text-[var(--site-primary)] transition-transform duration-200 group-hover:scale-105"
-                        aria-hidden="true"
-                      >
-                        <Building2 className="h-5 w-5" />
-                      </span>
+                    {/* Top Row: Refined Location Badge + Main Branch Flag */}
+                    <div className="flex items-center justify-between gap-3 mb-5">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--site-primary)]/10 text-[var(--site-primary)] ring-1 ring-[var(--site-primary)]/20 transition-transform duration-300 group-hover:scale-110"
+                          aria-hidden="true"
+                        >
+                          <Building2 className="h-5 w-5" />
+                        </span>
+                        <span className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
+                          {rtl ? 'موقع الفرع' : 'Branch Location'}
+                        </span>
+                      </div>
+
                       {b.isDefault && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 border border-amber-200/60">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-50 to-amber-100/60 px-3 py-1 text-xs font-bold text-amber-800 shadow-xs">
                           <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
                           <span>{rtl ? 'الفرع الرئيسي' : 'Main Branch'}</span>
                         </span>
                       )}
                     </div>
 
-                    {/* Branch Name */}
-                    <h3 className="text-lg font-bold text-[#172033] break-words">
+                    {/* Branch Title */}
+                    <h3 className="text-xl font-bold text-[#172033] break-words tracking-tight group-hover:text-[var(--site-primary)] transition-colors">
                       {b.name || (rtl ? 'الفرع' : 'Branch')}
                     </h3>
 
-                    {/* Branch Address */}
-                    <div className="mt-3 flex items-start gap-2.5 text-sm text-[#4b5563]">
-                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[var(--site-primary)]" aria-hidden="true" />
-                      <span className="leading-relaxed break-words">{b.address}</span>
+                    {/* Address Box */}
+                    <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#edf2f7] bg-[#f8fafc] p-4 text-sm text-[#475569] transition-colors group-hover:bg-[#f1f5f9]/60">
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[var(--site-primary)]/10 text-[var(--site-primary)]">
+                        <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0">
+                        <span className="block text-[11px] font-semibold text-[#94a3b8] mb-0.5 uppercase tracking-wide">
+                          {rtl ? 'العنوان الفعلي' : 'Address'}
+                        </span>
+                        <span className="leading-relaxed font-medium text-[#1e293b] break-words">
+                          {b.address}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Google Maps Action Button / Link */}
+                  {/* Google Maps Directions Action - Distinct navigation card footer */}
                   {mapsHref && (
-                    <div className="mt-6 pt-4 border-t border-[#f0f2f6]">
+                    <div className="mt-6 pt-4 border-t border-[#f1f5f9]">
                       <a
                         href={mapsHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--site-primary)] px-4 py-2.5 text-xs font-semibold text-white shadow-xs transition-all duration-150 hover:opacity-90 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
+                        className="group/btn flex w-full items-center justify-between rounded-2xl border border-[var(--site-primary)]/25 bg-[var(--site-primary)]/5 px-4 py-3 text-xs font-bold text-[var(--site-primary)] shadow-xs transition-all duration-200 hover:bg-[var(--site-primary)] hover:text-white hover:border-transparent hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
                       >
-                        <MapPin className="h-4 w-4" aria-hidden="true" />
-                        <span>{rtl ? 'عرض على خرائط جوجل' : 'View on Google Maps'}</span>
-                        <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden="true" />
+                        <div className="flex items-center gap-2">
+                          <Navigation className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover/btn:rotate-45" aria-hidden="true" />
+                          <span>{rtl ? 'الاتجاهات عبر خرائط جوجل' : 'Directions on Google Maps'}</span>
+                        </div>
+                        <ArrowUpRight className="h-4 w-4 shrink-0 opacity-70 transition-transform duration-200 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 rtl:rotate-[-90deg]" aria-hidden="true" />
                       </a>
                     </div>
                   )}

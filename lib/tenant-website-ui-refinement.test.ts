@@ -121,20 +121,11 @@ const footerContact = (nodes: Node[]) => nodes.find((n) => n.testId === 'footer-
 // 1. Footer — layer A (contact information)
 // ===========================================================================
 describe('footer layer A — contact information', () => {
-  it('renders a three-column grid when all three contact fields are available', () => {
-    const nodes = render(configWith({ contact: { address: field('القاهرة'), phone: field('+201000000000'), email: field('a@b.com') } }))
+  it('renders a two-column grid when both contact fields (phone and email) are available', () => {
+    const nodes = render(configWith({ contact: { phone: field('+201000000000'), email: field('a@b.com') } }))
     const grid = footerContact(nodes)
     expect(grid).toBeTruthy()
-    expect(grid!.className).toContain('sm:grid-cols-3')
-  })
-
-  it('renders a two-column grid when only two fields are available', () => {
-    const nodes = render(
-      configWith({ contact: { phone: field('+201000000000'), email: field('a@b.com') } }),
-      'ar',
-      noLegacyAddress
-    )
-    expect(footerContact(nodes)!.className).toContain('sm:grid-cols-2')
+    expect(grid!.className).toContain('sm:grid-cols-2')
   })
 
   it('stacks (no multi-column grid) when only one field is available', () => {
@@ -157,12 +148,13 @@ describe('footer layer A — contact information', () => {
     expect(footerContact(nodes)).toBeUndefined()
   })
 
-  it('renders a visible address, phone and email', () => {
+  it('renders visible phone and email without redundant contact address', () => {
     const nodes = render(configWith({ contact: { address: field('القاهرة'), phone: field('+201000000000'), email: field('a@b.com') } }))
     const texts = footerNodes(nodes).map((n) => textOf(n.children)).join(' | ')
-    expect(texts).toContain('القاهرة')
     expect(texts).toContain('+201000000000')
     expect(texts).toContain('a@b.com')
+    // Address is strictly removed from contact info (managed at branch level)
+    expect(texts).not.toContain('القاهرة')
   })
 
   it('uses tel: and mailto: for the phone and email actions', () => {
@@ -172,25 +164,18 @@ describe('footer layer A — contact information', () => {
     expect(hrefs).toContain('mailto:a@b.com')
   })
 
-  it('falls back to the legacy translation address when the config has none', () => {
+  it('does not leak legacy translation address into contact footer', () => {
     const nodes = render(configWith({ contact: { phone: field('+201000000000') } }))
     const texts = footerNodes(nodes).map((n) => textOf(n.children)).join(' | ')
-    expect(texts).toContain('القاهرة')
-  })
-
-  it('NEVER reveals an address explicitly hidden in the configuration', () => {
-    const nodes = render(
-      configWith({ contact: { address: { value: 'مخفي', isVisible: false }, phone: field('+201000000000') } })
-    )
-    const texts = footerNodes(nodes).map((n) => textOf(n.children)).join(' | ')
-    expect(texts).not.toContain('مخفي')
     expect(texts).not.toContain('القاهرة')
   })
 
-  it('shows a configured, visible address in preference to the legacy one', () => {
-    const nodes = render(configWith({ contact: { address: field('عنوان جديد') } }))
+  it('NEVER reveals an address in the contact footer even if provided in config', () => {
+    const nodes = render(
+      configWith({ contact: { address: field('عنوان جديد'), phone: field('+201000000000') } })
+    )
     const texts = footerNodes(nodes).map((n) => textOf(n.children)).join(' | ')
-    expect(texts).toContain('عنوان جديد')
+    expect(texts).not.toContain('عنوان جديد')
     expect(texts).not.toContain('القاهرة')
   })
 })
