@@ -577,28 +577,28 @@ export function TenantWebsite({
       <section
         id="branches"
         key="branches"
-        className="relative border-t border-[#edf0f5] bg-gradient-to-b from-[#f8fafc]/90 to-surface/40 py-16 sm:py-24"
+        className="relative border-t border-[#edf0f5] bg-gradient-to-b from-[#f8fafc]/90 to-surface/40 py-10 sm:py-14"
         data-testid="branch-locations"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           {/* Section Header */}
-          <div className="mb-12 text-center sm:mb-16">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--site-primary)]/20 bg-[var(--site-primary)]/10 px-3.5 py-1 text-xs font-semibold text-[var(--site-primary)] shadow-xs">
+          <div className="mb-6 text-center sm:mb-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[var(--site-primary)]/20 bg-[var(--site-primary)]/10 px-3 py-0.5 text-xs font-semibold text-[var(--site-primary)] shadow-xs">
               <Compass className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{rtl ? 'فروعنا المتاحة' : 'Our Branch Network'}</span>
             </div>
-            <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-[#172033] break-words sm:text-4xl">
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-[#172033] break-words sm:text-3xl">
               {rtl ? 'تفضل بزيارة فروعنا' : 'Visit Our Locations'}
             </h2>
-            <p className="mt-3 text-base text-[#64748b] max-w-2xl mx-auto break-words leading-relaxed">
+            <p className="mt-1.5 text-sm text-[#64748b] max-w-2xl mx-auto break-words leading-relaxed">
               {rtl
-                ? 'يسعدنا استقبالكم في أي من مواقعنا. اختر الفرع الأقرب إليك واحصل على الاتجاهات الدقيقة عبر خرائط جوجل.'
-                : 'We are delighted to welcome you at any of our venues. Choose the nearest location and get precise turn-by-turn directions.'}
+                ? 'يسعدنا استقبالكم في أي من مواقعنا. اختر الفرع الأقرب إليك واحصل على الاتجاهات عبر خرائط جوجل.'
+                : 'We are delighted to welcome you at any of our venues. Choose the nearest location and get directions on Google Maps.'}
             </p>
           </div>
 
           {/* Cards Grid */}
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
             {branches.map((b) => {
               const hasMapsUrl = b.googleMapsUrl && isHttpUrl(b.googleMapsUrl)
               const mapsHref = hasMapsUrl ? b.googleMapsUrl!.trim() : null
@@ -607,66 +607,54 @@ export function TenantWebsite({
                 <div
                   key={b.id}
                   data-testid="branch-location-card"
-                  className="group relative flex flex-col justify-between rounded-3xl border border-[#e2e8f0] bg-paper p-6 sm:p-7 shadow-xs transition-all duration-300 hover:-translate-y-1 hover:border-[var(--site-primary)]/50 hover:shadow-xl"
+                  className="group relative flex flex-col justify-between rounded-2xl border border-[#e2e8f0] bg-paper p-4 sm:p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--site-primary)]/50 hover:shadow-md"
                 >
                   <div>
-                    {/* Top Row: Refined Location Badge + Main Branch Flag */}
-                    <div className="flex items-center justify-between gap-3 mb-5">
-                      <div className="flex items-center gap-2.5">
+                    {/* Header: Icon + Title + Main Badge */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <span
-                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--site-primary)]/10 text-[var(--site-primary)] ring-1 ring-[var(--site-primary)]/20 transition-transform duration-300 group-hover:scale-110"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--site-primary)]/10 text-[var(--site-primary)] ring-1 ring-[var(--site-primary)]/20 transition-transform duration-200 group-hover:scale-105"
                           aria-hidden="true"
                         >
-                          <Building2 className="h-5 w-5" />
+                          <Building2 className="h-4 w-4" />
                         </span>
-                        <span className="text-xs font-semibold uppercase tracking-wider text-[#94a3b8]">
-                          {rtl ? 'موقع الفرع' : 'Branch Location'}
-                        </span>
+                        <h3 className="text-base font-bold text-[#172033] truncate tracking-tight group-hover:text-[var(--site-primary)] transition-colors">
+                          {b.name || (rtl ? 'الفرع' : 'Branch')}
+                        </h3>
                       </div>
 
                       {b.isDefault && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-50 to-amber-100/60 px-3 py-1 text-xs font-bold text-amber-800 shadow-xs">
-                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300/80 bg-gradient-to-r from-amber-50 to-amber-100/60 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 shadow-xs">
+                          <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
                           <span>{rtl ? 'الفرع الرئيسي' : 'Main Branch'}</span>
                         </span>
                       )}
                     </div>
 
-                    {/* Branch Title */}
-                    <h3 className="text-xl font-bold text-[#172033] break-words tracking-tight group-hover:text-[var(--site-primary)] transition-colors">
-                      {b.name || (rtl ? 'الفرع' : 'Branch')}
-                    </h3>
-
-                    {/* Address Box */}
-                    <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#edf2f7] bg-[#f8fafc] p-4 text-sm text-[#475569] transition-colors group-hover:bg-[#f1f5f9]/60">
-                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[var(--site-primary)]/10 text-[var(--site-primary)]">
-                        <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                    {/* Address Line */}
+                    <div className="mt-2.5 flex items-start gap-2 text-xs sm:text-sm text-[#475569]">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--site-primary)]" aria-hidden="true" />
+                      <span className="leading-snug font-medium text-[#334155] break-words line-clamp-2">
+                        {b.address}
                       </span>
-                      <div className="min-w-0">
-                        <span className="block text-[11px] font-semibold text-[#94a3b8] mb-0.5 uppercase tracking-wide">
-                          {rtl ? 'العنوان الفعلي' : 'Address'}
-                        </span>
-                        <span className="leading-relaxed font-medium text-[#1e293b] break-words">
-                          {b.address}
-                        </span>
-                      </div>
                     </div>
                   </div>
 
-                  {/* Google Maps Directions Action - Distinct navigation card footer */}
+                  {/* Google Maps Directions Action */}
                   {mapsHref && (
-                    <div className="mt-6 pt-4 border-t border-[#f1f5f9]">
+                    <div className="mt-3 pt-2.5 border-t border-[#f1f5f9]">
                       <a
                         href={mapsHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group/btn flex w-full items-center justify-between rounded-2xl border border-[var(--site-primary)]/25 bg-[var(--site-primary)]/5 px-4 py-3 text-xs font-bold text-[var(--site-primary)] shadow-xs transition-all duration-200 hover:bg-[var(--site-primary)] hover:text-white hover:border-transparent hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
+                        className="group/btn flex w-full items-center justify-between rounded-xl border border-[var(--site-primary)]/20 bg-[var(--site-primary)]/5 px-3 py-1.5 text-xs font-semibold text-[var(--site-primary)] shadow-xs transition-all duration-200 hover:bg-[var(--site-primary)] hover:text-white hover:border-transparent hover:shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
                       >
-                        <div className="flex items-center gap-2">
-                          <Navigation className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover/btn:rotate-45" aria-hidden="true" />
+                        <div className="flex items-center gap-1.5">
+                          <Navigation className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-hover/btn:rotate-45" aria-hidden="true" />
                           <span>{rtl ? 'الاتجاهات عبر خرائط جوجل' : 'Directions on Google Maps'}</span>
                         </div>
-                        <ArrowUpRight className="h-4 w-4 shrink-0 opacity-70 transition-transform duration-200 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 rtl:rotate-[-90deg]" aria-hidden="true" />
+                        <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-70 transition-transform duration-200 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 rtl:rotate-[-90deg]" aria-hidden="true" />
                       </a>
                     </div>
                   )}
