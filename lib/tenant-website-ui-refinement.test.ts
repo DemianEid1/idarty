@@ -312,43 +312,39 @@ describe('footer layer C — copyright, social, attribution', () => {
 // 4. Responsive service cards
 // ===========================================================================
 describe('responsive service cards', () => {
-  const cards = () => render(configWith({})).filter((n) => n.className.includes('group') && n.className.includes('rounded-2xl'))
+  // New card design: full-width vertical column with dark bg and image on top.
+  const cards = () => render(configWith({})).filter((n) => n.className.includes('group') && n.className.includes('flex-col') && n.className.includes('overflow-hidden'))
 
-  it('uses ONE card tree with responsive direction (no duplicated trees)', () => {
+  it('uses ONE card tree — vertical flex column', () => {
     const all = cards()
     expect(all).toHaveLength(1)
-    // Horizontal on mobile, vertical from `sm` up.
-    expect(all[0].className).toContain('flex-row')
-    expect(all[0].className).toContain('sm:flex-col')
+    expect(all[0].className).toContain('flex-col')
   })
 
-  it('gives the mobile thumbnail a fixed width and a full-width band from sm', () => {
+  it('gives the image zone a full-width fixed-height band with overflow-hidden', () => {
     const nodes = render(configWith({}))
-    const box = nodes.find((n) => n.className.includes('w-[110px]'))
+    const box = nodes.find((n) => n.className.includes('h-52') && n.className.includes('w-full') && n.className.includes('overflow-hidden'))
     expect(box).toBeTruthy()
-    expect(box!.className).toContain('sm:w-full')
-    expect(box!.className).toContain('sm:aspect-[16/10]')
-    expect(box!.className).toContain('overflow-hidden') // the container clips the image
-    // The image itself keeps object-cover.
     const img = nodes.find((n) => n.type === 'img' && n.className.includes('object-cover'))
     expect(img).toBeTruthy()
   })
 
-  it('uses logical (direction-aware) rounding, not an LTR-only trick', () => {
-    const box = render(configWith({})).find((n) => n.className.includes('w-[110px]'))!
-    expect(box.className).toContain('rounded-s-2xl')
-    expect(box.className).toContain('sm:rounded-s-none')
+  it('uses full-width image band (no direction-specific rounding on image zone)', () => {
+    const nodes = render(configWith({}))
+    const box = nodes.find((n) => n.className.includes('h-52') && n.className.includes('w-full'))
+    expect(box).toBeTruthy()
+    expect(box!.className).not.toContain('rounded-s-')
   })
 
-  it('reduces mobile padding to p-3 and restores p-5 from sm', () => {
-    const body = render(configWith({})).find((n) => n.className.includes('p-3') && n.className.includes('sm:p-5'))
+  it('uses compact body padding (px-5 pb-5 pt-3)', () => {
+    const body = render(configWith({})).find((n) => n.className.includes('px-5') && n.className.includes('pb-5') && n.className.includes('pt-3'))
     expect(body).toBeTruthy()
   })
 
-  it('shows the Clock3 duration and a prominent price', () => {
+  it('shows the Clock3 duration and price as pill tags', () => {
     const nodes = render(configWith({}))
-    const meta = nodes.find((n) => n.className.includes('gap-x-2') && n.className.includes('flex-wrap'))
-    expect(meta).toBeTruthy()
+    const tags = nodes.find((n) => n.className.includes('flex-wrap') && n.className.includes('gap-2'))
+    expect(tags).toBeTruthy()
     const texts = nodes.map((n) => textOf(n.children)).join(' | ')
     expect(texts).toContain('دقيقة')
     expect(texts).toContain('100')
@@ -368,31 +364,31 @@ describe('responsive service cards', () => {
     expect(link!.href).toBe('/ar/tenants/demo-salon/book?service=svc-1')
   })
 
-  it('keeps the 16:10 ratio for the desktop image band', () => {
-    const box = render(configWith({})).find((n) => n.className.includes('w-[110px]'))!
-    expect(box.className).toContain('sm:aspect-[16/10]')
+  it('image zone has a fixed height visible on all screen sizes', () => {
+    const nodes = render(configWith({}))
+    const box = nodes.find((n) => n.className.includes('h-52') && n.className.includes('sm:h-56'))
+    expect(box).toBeTruthy()
   })
 
   it('preserves the image focal point and lazy loading', () => {
     const nodes = render(configWith({}))
     const img = nodes.find((n) => n.className.includes('object-cover') && n.className.includes('group-hover:scale'))
     expect(img).toBeTruthy()
-    // lazy loading is preserved on service images
     const lazy = nodes.filter((n) => n.type === 'img')
     expect(lazy.length).toBeGreaterThan(0)
   })
 
-  it('makes the booking action full-width from sm and compact on mobile', () => {
+  it('makes the booking button full-width across all screen sizes', () => {
     const link = render(configWith({})).find((n) => String(n.href ?? '').includes('?service='))!
-    expect(link.className).toContain('sm:w-full')
-    expect(link.className).toContain('shrink-0')
+    expect(link.className).toContain('w-full')
   })
 
-  it('keeps the card min-w-0 so long text cannot blow out the grid', () => {
-    expect(cards()[0].className).toContain('min-w-0')
+  it('card has gradient fade from image into body', () => {
+    const nodes = render(configWith({}))
+    const fade = nodes.find((n) => n.className.includes('bg-gradient-to-t') && n.className.includes('from-paper'))
+    expect(fade).toBeTruthy()
   })
 })
-
 // ===========================================================================
 // 5. Hero minimum height
 // ===========================================================================

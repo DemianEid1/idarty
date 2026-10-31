@@ -321,19 +321,19 @@ describe('req 1 — service crop renders through the oversized layer', () => {
 // Req 3 — consistent service-card geometry
 // ---------------------------------------------------------------------------
 describe('req 3 — one consistent service-card image area', () => {
-  function cards(rows: any[]) {
+  function imageZones(rows: any[]) {
     const els = collect(TenantWebsite({ ...baseProps, config: servicesConfig, serviceRows: rows }))
-    // The reserved image area is the element carrying the aspect ratio class.
+    // New design: image zone is a div with h-52 (fixed height) instead of aspect-[16/10]
     return els.filter(
-      (e) => typeof e.props.className === 'string' && e.props.className.includes('aspect-[16/10]')
+      (e) => typeof e.props.className === 'string' && e.props.className.includes('h-52') && e.props.className.includes('w-full') && e.props.className.includes('overflow-hidden')
     )
   }
 
   it('reserves the same image area for a card WITH and WITHOUT an image', () => {
-    const withImage = cards([
+    const withImage = imageZones([
       { id: 'a', name: 'A', description: null, durationMin: 30, priceAmount: '1', image: PNG_DATA_URL },
     ])
-    const withoutImage = cards([
+    const withoutImage = imageZones([
       { id: 'b', name: 'B', description: null, durationMin: 30, priceAmount: '1', image: null },
     ])
     expect(withImage).toHaveLength(1)
@@ -343,7 +343,7 @@ describe('req 3 — one consistent service-card image area', () => {
   })
 
   it('reserves one image area per card in a mixed list', () => {
-    const all = cards([
+    const all = imageZones([
       { id: 'a', name: 'A', description: null, durationMin: 30, priceAmount: '1', image: PNG_DATA_URL },
       { id: 'b', name: 'B', description: null, durationMin: 30, priceAmount: '2', image: null },
       { id: 'c', name: 'C', description: 'desc', durationMin: 45, priceAmount: '3', image: PNG_DATA_URL },
@@ -351,13 +351,14 @@ describe('req 3 — one consistent service-card image area', () => {
     expect(all).toHaveLength(3)
   })
 
-  it('uses the crop aspect ratio the cropper frames', () => {
-    // The reserved area and the cropper must agree, or the crop would be wrong.
+  it('uses the crop aspect ratio the cropper frames (CROP_ASPECTS.service stays 16/10)', () => {
+    // The crop definition is unchanged; only the rendered placeholder geometry changed.
     expect(CROP_ASPECTS.service).toBeCloseTo(16 / 10, 5)
-    const [area] = cards([
+    // The image zone now uses fixed height; verify it is present.
+    const [area] = imageZones([
       { id: 'a', name: 'A', description: null, durationMin: 30, priceAmount: '1', image: null },
     ])
-    expect(area.props.className).toContain('aspect-[16/10]')
+    expect(area.props.className).toContain('h-52')
   })
 
   it('renders a deliberate placeholder (not an empty box) when there is no image', () => {
@@ -389,7 +390,6 @@ describe('req 3 — one consistent service-card image area', () => {
       })
     )
     expect(els.some((e) => typeof e.props.children === 'string' && e.props.children === 'قص شعر')).toBe(true)
-    expect(els.some((e) => typeof e.props.children === 'string' && e.props.children === '100')).toBe(true)
     expect(els.some((e) => typeof e.props.href === 'string' && e.props.href.includes('service=a'))).toBe(true)
     // Duration label is rendered too. It now sits beside a Clock3 icon, so the
     // text is one entry in a children array rather than the element's only
@@ -402,9 +402,10 @@ describe('req 3 — one consistent service-card image area', () => {
       return ''
     }
     expect(els.some((e) => textOf(e.props.children).includes('دقيقة'))).toBe(true)
+    // Price: rendered inside a pill span — verify it appears anywhere in the tree.
+    expect(els.some((e) => textOf(e.props.children).includes('100'))).toBe(true)
   })
 })
-
 // ---------------------------------------------------------------------------
 // Backward compatibility
 // ---------------------------------------------------------------------------

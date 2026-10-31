@@ -189,7 +189,7 @@ export default function Page({ locale = 'ar' }: { locale?: 'ar' | 'en' }) {
             ) : session ? (
               <Link
                 href={`/${locale}/dashboard`}
-                className="hidden rounded-xl bg-brand-teal px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(15,118,110,0.25)] transition-all hover:bg-[#0d6560] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(15,118,110,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2 md:inline-flex md:items-center md:gap-1.5"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-brand-teal px-5 py-2.5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(15,118,110,0.25)] transition-all hover:bg-[#0d6560] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(15,118,110,0.3)] outline-none focus-visible:ring-2 focus-visible:ring-brand-teal focus-visible:ring-offset-2"
               >
                 {copy.dashboard}
                 <ArrowRight aria-hidden="true" className="size-3.5" />
@@ -211,7 +211,20 @@ export default function Page({ locale = 'ar' }: { locale?: 'ar' | 'en' }) {
                 </Link>
               </>
             )}
-            <MobileNav locale={locale} labels={{ open: rtl ? 'فتح القائمة' : 'Open navigation', close: rtl ? 'إغلاق القائمة' : 'Close navigation', links: [{ label: copy.how, href: '#how-it-works' }, { label: copy.features, href: '#features' }, { label: copy.businesses, href: '#businesses' }] }} />
+            {!session && (
+              <MobileNav
+                locale={locale}
+                labels={{
+                  open: rtl ? 'فتح القائمة' : 'Open navigation',
+                  close: rtl ? 'إغلاق القائمة' : 'Close navigation',
+                  links: [
+                    { label: copy.how, href: '#how-it-works' },
+                    { label: copy.features, href: '#features' },
+                    { label: copy.businesses, href: '#businesses' },
+                  ],
+                }}
+              />
+            )}
           </div>
         </div>
       </header>

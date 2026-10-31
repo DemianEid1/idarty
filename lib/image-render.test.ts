@@ -155,7 +155,14 @@ describe('TenantWebsite service image rendering (real component)', () => {
     })
     const els = collectElements(el)
     expect(els.some((e) => typeof e.props.children === 'string' && e.props.children === 'قص شعر')).toBe(true)
-    expect(els.some((e) => typeof e.props.children === 'string' && e.props.children === '100')).toBe(true)
+    // Price is rendered inside a pill span; check it appears anywhere in the flattened tree.
+    const flatText = (c: unknown): string => {
+      if (typeof c === 'string') return c
+      if (typeof c === 'number') return String(c)
+      if (Array.isArray(c)) return c.map(flatText).join(' ')
+      return ''
+    }
+    expect(els.some((e) => flatText(e.props.children).includes('100'))).toBe(true)
     // The booking link for this service is preserved.
     expect(els.some((e) => typeof e.props.href === 'string' && e.props.href.includes('service=svc-1'))).toBe(true)
   })

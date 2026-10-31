@@ -188,9 +188,10 @@ describe('fix 3 — service images live in Website Management', () => {
   })
 
   it('keeps service images optional with the same public placeholder', () => {
-    // The public renderer still reserves one image area for every card.
+    // The public renderer still reserves one image area (fixed-height band) for every card.
     const site = read('components/tenant-website.tsx')
-    expect(site).toContain('aspect-[16/10]')
+    // New design uses a fixed-height image zone (h-52) instead of aspect-[16/10].
+    expect(site).toContain('h-52')
     expect(site).toContain('item.image ? (')
   })
 

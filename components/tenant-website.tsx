@@ -385,68 +385,106 @@ export function TenantWebsite({
         />
       )}
 
+
+
       {/* Content container — matches the site's normal readable width.
           `flex-1` + `justify-center` vertically centre the content inside the
           hero's minimum height while still allowing the section to grow when the
           localized text needs more room. */}
       <div className="relative mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center px-4 py-10 sm:px-6 sm:py-16 lg:py-20">
-        <div className="max-w-2xl">
-          <p
-            className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3.5 py-1.5 text-sm font-semibold break-words"
-            style={
-              heroImage
-                ? { color: '#fff', borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(0,0,0,0.32)' }
-                : { color: 'var(--site-primary)', borderColor: 'var(--site-primary)' }
-            }
-          >
-            <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
-            {businessTagline}
-          </p>
-          <h1
-            className="mt-4 text-[2.25rem] font-bold tracking-tight break-words sm:text-[3.25rem] lg:text-[4rem] leading-[1.15]"
-            style={heroImage ? { color: '#fff', textShadow: '0 2px 12px rgba(0,0,0,0.25)' } : undefined}
-          >
-            {businessName}
-          </h1>
-          <p
-            className="mt-4 max-w-xl text-base leading-7 break-words sm:text-lg sm:leading-8"
-            style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : '#6f7b90' }}
-          >
-            {businessDescription}
-          </p>
-          <div
-            className="mt-5 flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:gap-x-5 sm:gap-y-2"
-            style={{ color: heroImage ? 'rgba(255,255,255,0.85)' : '#748096' }}
-          >
-            {businessAddress && (
-              <span className="flex items-center gap-2 break-words">
-                <MapPin className="h-4 w-4 shrink-0" style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : 'var(--site-primary)' }} aria-hidden="true" />
-                {businessAddress}
-              </span>
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8 lg:gap-12">
+          {/* Main Hero Column */}
+          <div className="max-w-2xl lg:max-w-xl xl:max-w-2xl lg:flex-1">
+            {/* Tagline Pill */}
+            {businessTagline && (
+              <div className="mb-4">
+                <p
+                  className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs sm:text-sm font-semibold tracking-wide shadow-xs break-words"
+                  style={
+                    heroImage
+                      ? { color: '#fff', borderColor: 'rgba(255,255,255,0.45)', backgroundColor: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(8px)' }
+                      : { color: 'var(--site-primary)', borderColor: 'var(--site-primary)', backgroundColor: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)' }
+                  }
+                >
+                  <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{businessTagline}</span>
+                </p>
+              </div>
             )}
-            <span className="flex items-center gap-2">
-              <Clock3 className="h-4 w-4 shrink-0" style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : 'var(--site-primary)' }} aria-hidden="true" />
-              {hoursLabel}
-            </span>
-            {businessPhone && (
-              <span className="flex items-center gap-2 break-words">
-                <Phone className="h-4 w-4 shrink-0" style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : 'var(--site-primary)' }} aria-hidden="true" />
-                <span dir="ltr">{businessPhone}</span>
-              </span>
-            )}
+
+            {/* Headline */}
+            <h1
+              className="mt-4 text-[2.25rem] font-extrabold tracking-tight break-words sm:text-[3.25rem] lg:text-[4rem] leading-[1.15]"
+              style={heroImage ? { color: '#fff', textShadow: '0 2px 14px rgba(0,0,0,0.35)' } : { color: '#0f172a' }}
+            >
+              {businessName}
+            </h1>
+
+            {/* Description */}
+            <p
+              className="mt-4 max-w-xl text-sm leading-relaxed sm:text-base sm:leading-8 lg:text-lg break-words font-normal"
+              style={{ color: heroImage ? 'rgba(255,255,255,0.92)' : '#475569' }}
+            >
+              {businessDescription}
+            </p>
+
+            {/* Quick Metadata badges */}
+            <div
+              className="mt-5 flex flex-wrap items-center gap-2 text-xs sm:text-sm"
+              style={{ color: heroImage ? 'rgba(255,255,255,0.9)' : '#475569' }}
+            >
+              {businessAddress && (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium break-words transition-all duration-200 ${
+                    heroImage
+                      ? 'border border-white/20 bg-black/45 text-white/95 shadow-xs backdrop-blur-md'
+                      : 'border border-[var(--site-primary)]/20 bg-white/80 text-[#334155] shadow-sm backdrop-blur-sm hover:border-[var(--site-primary)]/40 hover:bg-white'
+                  }`}
+                >
+                  <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} aria-hidden="true" />
+                  <span>{businessAddress}</span>
+                </span>
+              )}
+              {hoursLabel && (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium transition-all duration-200 ${
+                    heroImage
+                      ? 'border border-white/20 bg-black/45 text-white/95 shadow-xs backdrop-blur-md'
+                      : 'border border-[var(--site-primary)]/20 bg-white/80 text-[#334155] shadow-sm backdrop-blur-sm hover:border-[var(--site-primary)]/40 hover:bg-white'
+                  }`}
+                >
+                  <Clock3 className="h-3.5 w-3.5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} aria-hidden="true" />
+                  <span>{hoursLabel}</span>
+                </span>
+              )}
+              {businessPhone && (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium break-words transition-all duration-200 ${
+                    heroImage
+                      ? 'border border-white/20 bg-black/45 text-white/95 shadow-xs backdrop-blur-md'
+                      : 'border border-[var(--site-primary)]/20 bg-white/80 text-[#334155] shadow-sm backdrop-blur-sm hover:border-[var(--site-primary)]/40 hover:bg-white'
+                  }`}
+                >
+                  <Phone className="h-3.5 w-3.5 shrink-0" style={{ color: heroImage ? '#fff' : 'var(--site-primary)' }} aria-hidden="true" />
+                  <span dir="ltr">{businessPhone}</span>
+                </span>
+              )}
+            </div>
+
+            {/* Hero Booking CTA */}
+            <div className="mt-7 flex flex-col sm:flex-row sm:items-center gap-3">
+              <Link
+                href={heroBookingHref}
+                data-testid="hero-booking-cta"
+                className="group/cta inline-flex max-w-full items-center justify-center gap-2.5 rounded-xl px-7 py-3.5 text-base font-bold text-white shadow-lg transition-all duration-200 hover:opacity-90 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer min-h-[48px]"
+                style={{ backgroundColor: 'var(--site-primary)' }}
+              >
+                <span className="break-words">{heroBookingLabel}</span>
+                <ArrowRight className="h-5 w-5 shrink-0 transition-transform duration-200 group-hover/cta:translate-x-1 rtl:group-hover/cta:-translate-x-1 rtl:rotate-180" aria-hidden="true" />
+              </Link>
+            </div>
           </div>
-          {/* Hero's OWN booking button. Always the booking route, never the
-              configurable Main CTA. Compact and rounded, not full-width, so it
-              stays aligned with the hero's left-aligned content on desktop. */}
-          <Link
-            href={heroBookingHref}
-            data-testid="hero-booking-cta"
-            className="mt-7 inline-flex max-w-full items-center gap-2 rounded-xl px-6 py-3.5 text-base font-semibold text-white shadow-md transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:-translate-y-px active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
-            style={{ backgroundColor: 'var(--site-primary)' }}
-          >
-            <span className="break-words">{heroBookingLabel}</span>
-            <ArrowRight className="h-5 w-5 shrink-0 rtl:rotate-180" aria-hidden="true" />
-          </Link>
+
         </div>
       </div>
     </section>
@@ -469,24 +507,18 @@ export function TenantWebsite({
                 {servicesDescription}
               </p>
             </div>
-            {/* Mobile: horizontal cards (thumbnail beside the text).
-                `sm` and above: vertical cards (image spans the card width).
-                ONE card tree — the layout is driven purely by responsive CSS. */}
-            <div className="grid gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-3">
+
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {serviceRows.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex min-w-0 flex-row rounded-2xl border border-[#e6eaf1] bg-paper shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 sm:flex-col"
+                  className="group relative flex min-w-0 flex-col overflow-hidden rounded-2xl sm:rounded-3xl border border-[#e2e8f0] bg-paper shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-[var(--site-primary)]/40 hover:shadow-xl"
                 >
-                  {/* The ONE image area per card. On mobile it is a fixed square
-                      thumbnail (96×96); from `sm` up it becomes the card's
-                      full-width 16:10 band, matching CROP_ASPECTS.service — the
-                      ratio the cropper frames. */}
-                  <div className="relative w-[110px] shrink-0 self-stretch overflow-hidden rounded-s-2xl bg-[#f0f2f5] sm:aspect-[16/10] sm:w-full sm:self-auto sm:rounded-t-2xl sm:rounded-s-none">
+                  {/* — Image zone: full card top ~55% height — */}
+                  <div className="relative h-52 w-full shrink-0 overflow-hidden sm:h-56 bg-[#f8fafc]">
                     {item.image ? (
                       item.cropLayer ? (
-                        // A crop is stored: reproduce it exactly.
-                        <div style={item.cropLayer}>
+                        <div style={item.cropLayer} className="h-full w-full">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={item.image}
@@ -500,62 +532,78 @@ export function TenantWebsite({
                         <img
                           src={item.image}
                           alt=""
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
                           style={{ objectPosition: focalPointToCss(item.imageFocalPoint) }}
                           loading="lazy"
                         />
                       )
                     ) : (
-                      // Deliberate neutral placeholder — a restrained
-                      // service-related mark on the site's own surface tint,
-                      // never borrowed imagery.
                       <div
-                        className="flex h-full w-full items-center justify-center"
+                        className="relative flex h-full w-full items-center justify-center overflow-hidden bg-gradient-to-br from-[var(--site-primary)]/[0.04] via-paper to-[var(--site-primary)]/[0.08]"
                         aria-hidden="true"
                       >
-                        <Sparkles className="h-7 w-7 text-[#c3ccd9]" />
+                        {/* Full service name: vertically stretched with top-to-bottom gradient */}
+                        <span
+                          className="inline-block max-w-[92%] px-3 text-center text-3xl sm:text-4xl font-black select-none pointer-events-none tracking-tight leading-snug break-words line-clamp-2 transform scale-y-150 scale-x-130 sm:scale-y-150 origin-center bg-clip-text text-transparent opacity-100"
+                          style={{ backgroundImage: 'linear-gradient(to bottom, var(--site-primary) 0%, transparent 100%)' }}
+                        >
+                          {item.name ?? (rtl ? 'خدمة' : 'Service')}
+                        </span>
                       </div>
                     )}
+                    {/* Subtle gradient fade into card body */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-paper to-transparent" />
                   </div>
 
-                  <div className="flex min-w-0 flex-1 flex-col p-3 sm:p-5">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-bold break-words leading-snug sm:text-base sm:font-semibold sm:leading-normal">{item.name ?? (rtl ? 'خدمة' : 'Service')}</h3>
-                      {item.description && <p className="mt-1 text-xs leading-[1.45rem] text-[#6f7b90] break-words line-clamp-2 sm:mt-2 sm:text-sm sm:leading-6 sm:line-clamp-none">{item.description}</p>}
-                    </div>
+                    {/* — Card body: light theme matching site surface — */}
+                    <div className="flex flex-1 flex-col px-5 pb-5 pt-3 bg-paper">
+                      {/* Name */}
+                      <h3 className="text-[1.15rem] font-bold leading-snug text-[#172033] break-words tracking-tight group-hover:text-[var(--site-primary)] transition-colors">
+                        {item.name ?? (rtl ? 'خدمة' : 'Service')}
+                      </h3>
 
-                    {/* Mobile: metadata + book button on the SAME row (price left, button right in LTR / right–left in RTL).
-                        Desktop (sm+): metadata row above, then full-width button below. */}
-                    <div className="mt-auto pt-3 sm:pt-4">
-                      {/* Mobile: single flex row with duration+price on start, button on end.
-                          Desktop: column — duration+price row, then full-width button. */}
-                      <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-stretch sm:gap-3">
-                        {/* Duration + price */}
-                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="flex items-center gap-1 text-[#929bad]">
-                            <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                            <span className="text-xs sm:text-sm">{durationLabel(item.durationMin)}</span>
-                          </span>
-                          <span className="flex items-baseline gap-1">
-                            <span className="text-base font-bold sm:text-xl" style={{ color: 'var(--site-primary)' }}>{item.priceAmount}</span>
-                            <span className="text-xs text-[#929bad] sm:text-sm">{tenant.currency}</span>
+                      {/* Description */}
+                      {item.description && (
+                        <p className="mt-1.5 text-sm leading-relaxed text-[#64748b] break-words line-clamp-2">
+                          {item.description}
+                        </p>
+                      )}
+
+                      {/* Metadata & Price row: prominent price + duration pill */}
+                      <div className="mt-auto pt-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#f1f5f9] pt-3">
+                          {/* Prominent Price */}
+                          <div className="flex items-baseline gap-1.5">
+                            <span
+                              className="text-2xl font-black tracking-tight sm:text-[1.65rem]"
+                              style={{ color: 'var(--site-primary)' }}
+                            >
+                              {item.priceAmount}
+                            </span>
+                            <span className="text-xs font-bold text-[#64748b]">
+                              {tenant.currency}
+                            </span>
+                          </div>
+
+                          {/* Duration Pill */}
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f1f5f9] px-3 py-1 text-xs font-semibold text-[#475569] ring-1 ring-black/5">
+                            <Clock3 className="h-3.5 w-3.5 shrink-0 text-[var(--site-primary)]" aria-hidden="true" />
+                            <span>{durationLabel(item.durationMin)}</span>
                           </span>
                         </div>
-                        {/* Book button — compact & inline on mobile, full-width on desktop */}
+
+                        {/* Book button: incorporates site primary color */}
                         <Link
                           href={`/${locale}/tenants/${slug}/book?service=${item.id}`}
-                          className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-all duration-200 hover:opacity-90 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer min-h-[36px] sm:w-full sm:justify-center sm:px-4 sm:py-2.5 sm:text-sm sm:min-h-[44px] sm:rounded-lg"
+                          className="mt-3.5 flex w-full sm:w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-bold text-white shadow-xs transition-all duration-200 hover:opacity-90 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer min-h-[44px]"
                           style={{ backgroundColor: 'var(--site-primary)' }}
                         >
                           <span>{rtl ? 'احجز الآن' : 'Book Now'}</span>
-                          <ArrowRight className="h-3.5 w-3.5 shrink-0 rtl:rotate-180" aria-hidden="true" />
                         </Link>
                       </div>
                     </div>
-
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           </>
         ) : (
@@ -577,12 +625,12 @@ export function TenantWebsite({
       <section
         id="branches"
         key="branches"
-        className="relative border-t border-[#edf0f5] bg-gradient-to-b from-[#f8fafc]/90 to-surface/40 py-10 sm:py-14"
+        className="relative border-t border-[#edf0f5] bg-gradient-to-b from-[#f8fafc]/90 to-surface/40 py-14 sm:py-20"
         data-testid="branch-locations"
       >
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           {/* Section Header */}
-          <div className="mb-6 text-center sm:mb-8">
+          <div className="mb-10 text-center sm:mb-12">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--site-primary)]/20 bg-[var(--site-primary)]/10 px-3 py-0.5 text-xs font-semibold text-[var(--site-primary)] shadow-xs">
               <Compass className="h-3.5 w-3.5" aria-hidden="true" />
               <span>{rtl ? 'فروعنا المتاحة' : 'Our Branch Network'}</span>
@@ -590,15 +638,15 @@ export function TenantWebsite({
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-[#172033] break-words sm:text-3xl">
               {rtl ? 'تفضل بزيارة فروعنا' : 'Visit Our Locations'}
             </h2>
-            <p className="mt-1.5 text-sm text-[#64748b] max-w-2xl mx-auto break-words leading-relaxed">
+            <p className="mt-2.5 text-sm text-[#64748b] max-w-2xl mx-auto break-words leading-relaxed">
               {rtl
-                ? 'يسعدنا استقبالكم في أي من مواقعنا. اختر الفرع الأقرب إليك واحصل على الاتجاهات عبر خرائط جوجل.'
-                : 'We are delighted to welcome you at any of our venues. Choose the nearest location and get directions on Google Maps.'}
+                ? 'يسعدنا دائماً استقبالكم في كافة مواقعنا. تفضل باختيار الفرع الأنسب لك.'
+                : 'We look forward to welcoming you across all our locations. Choose the branch most convenient for you.'}
             </p>
           </div>
 
           {/* Cards Grid */}
-          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 sm:gap-4">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 sm:gap-6">
             {branches.map((b) => {
               const hasMapsUrl = b.googleMapsUrl && isHttpUrl(b.googleMapsUrl)
               const mapsHref = hasMapsUrl ? b.googleMapsUrl!.trim() : null
@@ -607,7 +655,7 @@ export function TenantWebsite({
                 <div
                   key={b.id}
                   data-testid="branch-location-card"
-                  className="group relative flex flex-col justify-between rounded-2xl border border-[#e2e8f0] bg-paper p-4 sm:p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--site-primary)]/50 hover:shadow-md"
+                  className="group relative flex flex-col justify-between rounded-2xl border border-[#e2e8f0] bg-paper p-5 sm:p-6 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--site-primary)]/50 hover:shadow-md"
                 >
                   <div>
                     {/* Header: Icon + Title + Main Badge */}
@@ -633,7 +681,7 @@ export function TenantWebsite({
                     </div>
 
                     {/* Address Line */}
-                    <div className="mt-2.5 flex items-start gap-2 text-xs sm:text-sm text-[#475569]">
+                    <div className="mt-3.5 flex items-start gap-2.5 text-xs sm:text-sm text-[#475569]">
                       <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--site-primary)]" aria-hidden="true" />
                       <span className="leading-snug font-medium text-[#334155] break-words line-clamp-2">
                         {b.address}
@@ -643,12 +691,12 @@ export function TenantWebsite({
 
                   {/* Google Maps Directions Action */}
                   {mapsHref && (
-                    <div className="mt-3 pt-2.5 border-t border-[#f1f5f9]">
+                    <div className="mt-4 pt-3.5 border-t border-[#f1f5f9]">
                       <a
                         href={mapsHref}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="group/btn flex w-full items-center justify-between rounded-xl border border-[var(--site-primary)]/20 bg-[var(--site-primary)]/5 px-3 py-1.5 text-xs font-semibold text-[var(--site-primary)] shadow-xs transition-all duration-200 hover:bg-[var(--site-primary)] hover:text-white hover:border-transparent hover:shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
+                        className="group/btn flex w-full items-center justify-between rounded-xl border border-[var(--site-primary)]/20 bg-[var(--site-primary)]/5 px-3.5 py-2 text-xs font-semibold text-[var(--site-primary)] shadow-xs transition-all duration-200 hover:bg-[var(--site-primary)] hover:text-white hover:border-transparent hover:shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-primary)] cursor-pointer"
                       >
                         <div className="flex items-center gap-1.5">
                           <Navigation className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-hover/btn:rotate-45" aria-hidden="true" />
@@ -725,7 +773,7 @@ export function TenantWebsite({
           unit, so the header never overlaps or gaps regardless of banner height. */}
       <div className="sticky top-0 z-40">
         {previewBanner}
-        <header className="border-b border-[#e8ebf1] bg-paper/95 backdrop-blur-md">
+        <header className="border-b border-black/[0.06] bg-white/60 backdrop-blur-xl shadow-[0_1px_12px_rgba(0,0,0,0.06)]">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3 sm:px-6 sm:py-4">
             <Link
               href={`/${locale}/tenants/${slug}`}
@@ -735,8 +783,8 @@ export function TenantWebsite({
                 <img src={logo} alt="" className="h-8 w-auto max-w-full shrink-0 object-contain sm:h-9" />
               ) : (
                 <span
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
-                  style={{ backgroundColor: 'var(--site-primary)' }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-black text-white shadow-md"
+                  style={{ backgroundColor: 'var(--site-primary)', boxShadow: '0 2px 8px color-mix(in srgb, var(--site-primary) 45%, transparent)' }}
                   aria-hidden="true"
                 >
                   {businessName.charAt(0).toUpperCase()}
@@ -755,44 +803,62 @@ export function TenantWebsite({
                   — the element's position among its siblings is not a contract. */}
               <span
                 data-testid="tenant-brand-name"
-                className="min-w-18 line-clamp-2 leading-tight text-sm font-semibold sm:text-base sm:line-clamp-1"
+                className="min-w-18 line-clamp-2 leading-tight text-sm font-bold sm:text-base sm:line-clamp-1"
                 title={businessName}
               >
                 {businessName}
               </span>
             </Link>
-            <nav className="flex min-w-0 items-center gap-1.5 sm:gap-3">
-              {showServices && serviceRows.length > 0 && (
-                <a
-                  href="#services"
-                  className="hidden text-sm font-medium text-[#647087] transition-colors duration-150 hover:text-[var(--site-primary)] sm:inline-block cursor-pointer"
-                >
-                  {rtl ? 'الخدمات' : 'Services'}
-                </a>
-              )}
-              {branches && branches.length > 0 && (
-                <a
-                  href="#branches"
-                  className="hidden text-sm font-medium text-[#647087] transition-colors duration-150 hover:text-[var(--site-primary)] sm:inline-block cursor-pointer"
-                >
-                  {rtl ? 'فروعنا' : 'Locations'}
-                </a>
-              )}
-              {/* Social links: desktop only. The header is already dense on
-                  mobile (brand + locale switch + CTA), so these are hidden below
-                  `sm` rather than competing for space. WhatsApp is a contact
-                  field, so it renders via <WhatsAppLink>. */}
+            <nav className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+              {/* Group 1: Nav links — desktop only */}
+              {(showServices && serviceRows.length > 0) || (branches && branches.length > 0) ? (
+                <div className="hidden items-center gap-4 sm:flex">
+                  {showServices && serviceRows.length > 0 && (
+                    <a
+                      href="#services"
+                      className="hidden text-sm font-medium text-[#647087] transition-colors duration-150 hover:text-[var(--site-primary)] sm:inline-block cursor-pointer relative after:absolute after:bottom-[-3px] after:left-0 after:h-[2px] after:w-0 after:rounded-full after:bg-[var(--site-primary)] after:transition-all after:duration-200 hover:after:w-full"
+                    >
+                      {rtl ? 'الخدمات' : 'Services'}
+                    </a>
+                  )}
+                  {branches && branches.length > 0 && (
+                    <a
+                      href="#branches"
+                      className="hidden text-sm font-medium text-[#647087] transition-colors duration-150 hover:text-[var(--site-primary)] sm:inline-block cursor-pointer relative after:absolute after:bottom-[-3px] after:left-0 after:h-[2px] after:w-0 after:rounded-full after:bg-[var(--site-primary)] after:transition-all after:duration-200 hover:after:w-full"
+                    >
+                      {rtl ? 'فروعنا' : 'Locations'}
+                    </a>
+                  )}
+                </div>
+              ) : null}
+
+              {/* Divider between nav links and secondary actions — desktop only */}
+              {(showServices && serviceRows.length > 0) || (branches && branches.length > 0) ? (
+                <div className="hidden sm:block h-4 w-px bg-[#d1d9e6] mx-1" aria-hidden="true" />
+              ) : null}
+
+              {/* Group 2: Social links + locale switch */}
               <div className="hidden items-center gap-1 sm:flex">
+                {/* Social links: desktop only. The header is already dense on
+                    mobile (brand + locale switch + CTA), so these are hidden below
+                    `sm` rather than competing for space. WhatsApp is a contact
+                    field, so it renders via <WhatsAppLink>. */}
                 <SocialLinks
                   locale={locale}
                   social={socialConfig}
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-0.5"
                   size={18}
                 />
                 <WhatsAppLink locale={locale} contact={contactConfig} size={18} />
               </div>
               {localeSwitch}
-              {/* Primary CTA. Rendered only when the configured action resolves
+
+              {/* Divider before CTA — desktop only */}
+              {showPrimaryCta && (
+                <div className="hidden sm:block h-4 w-px bg-[#d1d9e6] mx-1" aria-hidden="true" />
+              )}
+
+              {/* Group 3: Primary CTA. Rendered only when the configured action resolves
                   to a destination. When the mobile sticky CTA is actually shown,
                   this is hidden on mobile so exactly one primary action is
                   visible — the condition is `stickyVisible`, not merely
@@ -802,7 +868,7 @@ export function TenantWebsite({
                 <Link
                   href={primaryCtaHref}
                   {...(primaryCtaIsExternal ? { target: '_blank', rel: 'noreferrer' } : {})}
-                  className={`${stickyVisible ? 'hidden md:flex' : 'flex'} min-w-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 cursor-pointer sm:px-3.5 sm:py-2.5`}
+                  className={`${stickyVisible ? 'hidden md:flex' : 'flex'} min-w-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 hover:shadow-md hover:-translate-y-px active:translate-y-0 cursor-pointer sm:px-3.5 sm:py-2.5`}
                   style={{ backgroundColor: 'var(--site-primary)' }}
                 >
                   <span className="truncate">{primaryCtaLabel}</span>
